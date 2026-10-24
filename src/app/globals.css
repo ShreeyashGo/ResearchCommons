@@ -1,1 +1,303 @@
 @import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Research Commons — "quiet lab" theme.
+ * Warm paper light mode, deep ink dark mode. Accent is a desaturated teal;
+ * AI-generated content gets a violet tint so human and machine content never
+ * read the same.
+ */
+:root {
+  --bg: #f6f5f1;
+  --bg-raised: #fdfdfc;
+  --surface: #ffffff;
+  --surface-2: #f1efe9;
+  --ink: #232220;
+  --ink-soft: #57554f;
+  --muted: #8a877d;
+  --line: #e5e2d9;
+  --line-strong: #d5d1c4;
+  --accent: #0d7377;
+  --accent-strong: #0a5c60;
+  --accent-ink: #ffffff;
+  --accent-soft: #ddeeec;
+  --ai: #6d5bd0;
+  --ai-soft: #eceaf8;
+  --warn: #b4540a;
+  --warn-soft: #f7e8d8;
+  --danger: #b3382c;
+  --danger-soft: #f7e3e0;
+  --ok: #3f7d4e;
+  --ok-soft: #e2efe3;
+  --selection: rgba(13, 115, 119, 0.24);
+  --shadow-pop: 0 8px 30px rgb(30 28 22 / 0.14), 0 1px 4px rgb(30 28 22 / 0.08);
+  --shadow-card: 0 1px 2px rgb(30 28 22 / 0.05), 0 4px 14px rgb(30 28 22 / 0.06);
+
+  --ann-yellow: #eab308;
+  --ann-green: #22c55e;
+  --ann-blue: #3b82f6;
+  --ann-pink: #ec4899;
+  --ann-purple: #a855f7;
+}
+
+.dark {
+  --bg: #171614;
+  --bg-raised: #1d1c19;
+  --surface: #22211d;
+  --surface-2: #2a2925;
+  --ink: #ebe9e2;
+  --ink-soft: #b3b0a5;
+  --muted: #7d7a70;
+  --line: #33322c;
+  --line-strong: #45443c;
+  --accent: #2ea8ad;
+  --accent-strong: #45bcc1;
+  --accent-ink: #10202a;
+  --accent-soft: #1f3a3b;
+  --ai: #a294f5;
+  --ai-soft: #2d2a45;
+  --warn: #e08a45;
+  --warn-soft: #3a2c1e;
+  --danger: #e0665a;
+  --danger-soft: #3d2422;
+  --ok: #6cb97f;
+  --ok-soft: #22331f;
+  --selection: rgba(46, 168, 173, 0.32);
+  --shadow-pop: 0 10px 36px rgb(0 0 0 / 0.5), 0 1px 4px rgb(0 0 0 / 0.4);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.28);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-raised: var(--bg-raised);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas,
+    monospace;
+
+  --shadow-pop: var(--shadow-pop);
+  --shadow-card: var(--shadow-card);
+}
+
+html {
+  color-scheme: light;
+}
+
+.dark html,
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* ---- pdf.js text layer (minimal required styles; spans get position from
+ * inline calc(var(--total-scale-factor) * Npx) styles set by pdf.js) ---- */
+.pdf-page {
+  --scale-factor: 1;
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+}
+
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  caret-color: transparent;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: var(--selection);
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.textLayer.selecting .endOfContent {
+  top: 0;
+}
+
+/* ---- reader overlays ---- */
+
+.ann-highlight {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+  cursor: pointer;
+  transition: filter 120ms ease, outline-color 120ms ease;
+  outline: 1.5px solid transparent;
+  outline-offset: 0px;
+}
+
+.dark .ann-highlight {
+  mix-blend-mode: screen;
+}
+
+.ann-highlight:hover {
+  outline-color: currentColor;
+}
+
+.ann-highlight.is-active {
+  outline-color: currentColor;
+  filter: saturate(1.3);
+}
+
+.ann-highlight.is-private {
+  outline: 1.5px dashed currentColor;
+}
+
+.ann-badge {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: #fff;
+  cursor: pointer;
+  border: 1.5px solid var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
+  transition: transform 120ms ease;
+  z-index: 20;
+}
+
+.ann-badge:hover {
+  transform: scale(1.12);
+}
+
+.ann-badge.pulse {
+  animation: ann-pulse 1.8s ease-out;
+}
+
+@keyframes ann-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--pulse-color, rgba(13, 115, 119, 0.55));
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
+.cite-hotspot {
+  position: absolute;
+  cursor: pointer;
+  border-bottom: 1.5px dashed var(--ai);
+  background: transparent;
+  transition: background 120ms ease;
+  z-index: 10;
+}
+
+.cite-hotspot:hover,
+.cite-hotspot.is-active {
+  background: color-mix(in srgb, var(--ai) 18%, transparent);
+  border-radius: 2px;
+}
+
+/* Thin, calm scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes fade-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anim-fade-slide {
+  animation: fade-slide-in 160ms ease-out;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--line) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
