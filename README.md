@@ -37,7 +37,7 @@ Built in one day at the **Devin Hackathon** at **HackerHouse, Georgia Tech**.
 | **Shared & private (RLS-enforced)** | Group annotations and author-private notes, enforced by Supabase Row Level Security. | Share ideas without exposing private drafts. |
 | **Structured reviews** | Capture a group's assessment of a paper in a structured review. | Turn reading into a reusable record of strengths, limitations, and questions. |
 | **Citations you can follow** | Match references to real work metadata via Semantic Scholar, OpenAlex, and arXiv when available; unresolved references stay unresolved, never fabricated. | Follow the paper's source trail instead of trusting invented citations. |
-| **AI that keeps you reading** | On-demand, source-grounded summaries and citation explanations with evidence; Mock AI by default, Gemini and Ollama pluggable. | Get help with the paper while keeping claims tied to evidence. |
+| **AI that keeps you reading** | On-demand, source-grounded summaries, citation explanations and Ask AI Q&A with page-linked evidence quotes; Mock AI by default, Gemini and Ollama pluggable. | Get help with the paper while keeping claims tied to evidence. |
 | **Lab feed** | A group activity feed for papers, annotations, and reviews. | See what your lab is reading and discussing. |
 
 ## Screenshots
@@ -94,7 +94,6 @@ See the [architecture](docs/architecture.md) and [API contracts](docs/api-contra
 
 ## Roadmap
 
-- Ask AI chat grounded in the paper.
 - Coaching to help people learn how to read a paper.
 - Cross-paper research memory.
 - Public reading circles and lab pages.
