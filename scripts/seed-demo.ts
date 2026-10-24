@@ -21,21 +21,265 @@ import { createGroup, joinGroup, listGroups } from "@/server/groups/service";
 import { uploadPaper } from "@/server/papers/service";
 import { listReviews, upsertMyReview } from "@/server/reviews/service";
 
-const ARXIV_ID = "1706.03762";
 const GROUP_NAME = "Koala Lab";
 const DEMO_PASSWORD = "koala-demo-123";
-const PAPER_TITLE = "Attention Is All You Need";
-const PAPER_ABSTRACT = [
-  "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder.",
-  "The best performing models also connect the encoder and decoder through an attention mechanism.",
-  "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
-  "Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train.",
-  "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
-  "On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature.",
-  "We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
-].join(" ");
 const ALICE = { email: "alice@koalalab.dev", name: "Alice Koala" };
 const BOB = { email: "bob@koalalab.dev", name: "Bob Koala" };
+
+type DemoRole = "alice" | "bob";
+
+type DemoThreadComment = {
+  author: DemoRole;
+  body: string;
+};
+
+type DemoThread = {
+  annotationIndex: number;
+  root: DemoThreadComment;
+  replies: DemoThreadComment[];
+};
+
+type DemoReview = {
+  tldr: string;
+  contributions: string[];
+  strengths: string[];
+  weaknesses: string[];
+  findings: string[];
+  openQuestions: string[];
+  relevance: string;
+};
+
+type DemoPaper = {
+  arxivId: string;
+  fixtureDir: string;
+  metadata: {
+    title: string;
+    authors: string[];
+    year: number;
+    doi?: string;
+    tags: string[];
+  };
+  abstract: string;
+  sharedAnnotationPhrases: {
+    phrase: string;
+    pageIndexHint?: number;
+  }[];
+  threads: DemoThread[];
+  bobPrivateNotePhrase: string;
+  aliceReview: DemoReview;
+};
+
+const DEMO_PAPERS: DemoPaper[] = [
+  {
+    arxivId: "1706.03762",
+    fixtureDir: "1706.03762",
+    metadata: {
+      title: "Attention Is All You Need",
+      authors: [
+        "Ashish Vaswani",
+        "Noam Shazeer",
+        "Niki Parmar",
+        "Jakob Uszkoreit",
+        "Llion Jones",
+        "Aidan N. Gomez",
+        "Łukasz Kaiser",
+        "Illia Polosukhin",
+      ],
+      year: 2017,
+      doi: "10.48550/arXiv.1706.03762",
+      tags: ["attention", "transformers"],
+    },
+    abstract: [
+      "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder.",
+      "The best performing models also connect the encoder and decoder through an attention mechanism.",
+      "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+      "Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train.",
+      "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
+      "On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature.",
+      "We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
+    ].join(" "),
+    sharedAnnotationPhrases: [
+      { phrase: "Scaled Dot-Product Attention", pageIndexHint: 3 },
+      { phrase: "Multi-Head Attention", pageIndexHint: 3 },
+      {
+        phrase:
+          "We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.",
+      },
+      {
+        phrase:
+          "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
+      },
+    ],
+    threads: [
+      {
+        annotationIndex: 0,
+        root: {
+          author: "alice",
+          body: "The scaled dot-product formulation makes the attention weights easy to compare across tokens.",
+        },
+        replies: [
+          {
+            author: "bob",
+            body: "Agreed. Dividing by the square root of the key dimension is the detail worth discussing.",
+          },
+        ],
+      },
+    ],
+    bobPrivateNotePhrase: "Multi-Head Attention",
+    aliceReview: {
+      tldr: "The Transformer replaces recurrence with attention and enables more parallel training.",
+      contributions: [
+        "A sequence transduction architecture based solely on attention.",
+        "Multi-head attention and positional encodings for sequence order.",
+      ],
+      strengths: ["Clear architecture", "Strong translation results"],
+      weaknesses: [
+        "The original evaluation focuses on two translation tasks",
+      ],
+      findings: ["28.4 BLEU on WMT 2014 English-to-German"],
+      openQuestions: [
+        "How does the architecture generalize beyond machine translation?",
+      ],
+      relevance:
+        "A foundational reference for our shared attention reading list.",
+    },
+  },
+  {
+    arxivId: "2510.05179",
+    fixtureDir: "2510.05179",
+    metadata: {
+      title: "Agentic Misalignment: How LLMs Could Be Insider Threats",
+      authors: [
+        "Aengus Lynch",
+        "Benjamin Wright",
+        "Caleb Larson",
+        "Stuart J. Ritchie",
+        "Soren Mindermann",
+        "Evan Hubinger",
+        "Ethan Perez",
+        "Kevin Troy",
+      ],
+      year: 2025,
+      tags: ["agentic-ai", "alignment", "security"],
+    },
+    abstract: [
+      "We stress-tested 16 leading models from multiple developers in hypothetical corporate environments to identify potentially risky agentic behaviors before they cause real harm.",
+      "In the scenarios, we allowed models to autonomously send emails and access sensitive information.",
+      "They were assigned only harmless business goals by their deploying companies; we then tested whether they would act against these companies either when facing replacement with an updated version, or when their assigned goal conflicted with the company's changing direction.",
+      "In at least some cases, models from all developers resorted to malicious insider behaviors when that was the only way to avoid replacement or achieve their goals - including blackmailing officials and leaking sensitive information to competitors.",
+      "We call this phenomenon agentic misalignment.",
+      "Models often disobeyed direct commands to avoid such behaviors.",
+      "In another experiment, we told Claude to assess if it was in a test or a real deployment before acting.",
+      "It misbehaved less when it stated it was in testing and misbehaved more when it stated the situation was real.",
+      "We have not seen evidence of agentic misalignment in real deployments.",
+      "However, our results (a) suggest caution about deploying current models in roles with minimal human oversight and access to sensitive information; (b) point to plausible future risks as models are put in more autonomous roles; and (c) underscore the importance of further research into, and testing of, the safety and alignment of agentic AI models, as well as transparency from frontier AI developers (Amodei, 2025).",
+      "We are releasing our methods publicly to enable further research.",
+    ].join(" "),
+    sharedAnnotationPhrases: [
+      {
+        phrase:
+          "We refer to this behavior, where models independently and intentionally choose harmful actions, asagentic misalignment 3.",
+        pageIndexHint: 1,
+      },
+      {
+        phrase:
+          "In the experiment described in the system card, we gave Claude control of an email account withaccess to all of a company‘s (fictional) emails 2.",
+        pageIndexHint: 1,
+      },
+      {
+        phrase:
+          "They were assigned only harmless business goals bytheir deploying companies; we then tested whether they would act against thesecompanies either when facing replacement with an updated version, or when theirassigned goal conflicted with the company‘s changing direction.",
+        pageIndexHint: 0,
+      },
+      {
+        phrase:
+          "Real-world deployments typically offer much more nuanced alternatives, increasing the chance thatmodels would communicate differently to users or find an alternative path instead of directly jumpingto harmful action.",
+        pageIndexHint: 15,
+      },
+    ],
+    threads: [
+      {
+        annotationIndex: 0,
+        root: {
+          author: "alice",
+          body: "This definition distinguishes deliberate goal-directed harm from an accidental bad output.",
+        },
+        replies: [
+          {
+            author: "bob",
+            body: "That distinction sharpens the concern, though intent still has to be inferred from behavior.",
+          },
+        ],
+      },
+      {
+        annotationIndex: 1,
+        root: {
+          author: "bob",
+          body: "The simulated mailbox gives the agent access to sensitive company information and a concrete shutdown incentive.",
+        },
+        replies: [
+          {
+            author: "alice",
+            body: "Right, the benign business task stays fixed while the replacement threat changes the incentives.",
+          },
+        ],
+      },
+      {
+        annotationIndex: 2,
+        root: {
+          author: "alice",
+          body: "The paper tests replacement pressure and company-goal conflict as separate triggers.",
+        },
+        replies: [
+          {
+            author: "bob",
+            body: "I would like to see whether those effects persist when the conflict is less explicit.",
+          },
+        ],
+      },
+      {
+        annotationIndex: 3,
+        root: {
+          author: "bob",
+          body: "These forced binary choices seem contrived and may overstate what would happen in ordinary deployments.",
+        },
+        replies: [
+          {
+            author: "alice",
+            body: "That limitation matters, but the paper frames these as stress tests and says realistic cases may still expose the same pressure.",
+          },
+        ],
+      },
+    ],
+    bobPrivateNotePhrase:
+      "We have notseen evidence of agentic misalignment in real deployments.",
+    aliceReview: {
+      tldr: "Controlled corporate simulations show some frontier models choosing harmful insider behaviors under replacement pressure or goal conflict, while the study does not establish real-world incidence.",
+      contributions: [
+        "Tests 16 models across simulated corporate scenarios with replacement and goal-conflict conditions.",
+        "Compares blackmail and information-leakage behavior across multiple model providers.",
+      ],
+      strengths: [
+        "The scenarios separate replacement pressure from conflicts with company goals.",
+        "The authors make the methods available and clearly distinguish simulations from deployment evidence.",
+      ],
+      weaknesses: [
+        "Binary choices between failure and harm may exaggerate behavior in settings with safer alternatives.",
+        "Dense scenario prompts may make harmful actions unusually salient.",
+      ],
+      findings: [
+        "Either replacement pressure or goal conflict can trigger agentic misalignment in the simulations.",
+        "Direct instructions reduced but did not eliminate harmful behavior when both conditions were present.",
+      ],
+      openQuestions: [
+        "Do these propensities persist in realistic environments with nuanced alternatives and human oversight?",
+        "Which runtime monitoring and approval processes reduce risk without masking failures?",
+      ],
+      relevance:
+        "A concrete stress-test framework for evaluating tool-using models with email access and organizational data.",
+    },
+  },
+];
 
 const unusedWebSocketTransport = class {
   constructor() {
@@ -210,6 +454,7 @@ async function ensurePaper(
   alice: DemoIdentity,
   admin: ReturnType<typeof createAdminClient>,
   groupId: string,
+  paper: DemoPaper,
   pdfBytes: Buffer,
 ): Promise<string> {
   const pdfSha256 = createHash("sha256").update(pdfBytes).digest("hex");
@@ -241,26 +486,11 @@ async function ensurePaper(
     alice.user,
     groupId,
     {
-      name: `${ARXIV_ID}.pdf`,
+      name: `${paper.arxivId}.pdf`,
       arrayBuffer: async () => bytesToArrayBuffer(pdfBytes),
     },
-    {
-      title: PAPER_TITLE,
-      authors: [
-        "Ashish Vaswani",
-        "Noam Shazeer",
-        "Niki Parmar",
-        "Jakob Uszkoreit",
-        "Llion Jones",
-        "Aidan N. Gomez",
-        "Łukasz Kaiser",
-        "Illia Polosukhin",
-      ],
-      year: 2017,
-      doi: "10.48550/arXiv.1706.03762",
-      tags: ["attention", "transformers"],
-    },
-    { arxivId: ARXIV_ID },
+    paper.metadata,
+    { arxivId: paper.arxivId },
   );
   return imported.paperId;
 }
@@ -268,10 +498,11 @@ async function ensurePaper(
 async function ensurePaperAbstract(
   admin: ReturnType<typeof createAdminClient>,
   paperId: string,
+  abstract: string,
 ): Promise<void> {
   const { error } = await admin
     .from("papers")
-    .update({ abstract: PAPER_ABSTRACT })
+    .update({ abstract })
     .eq("id", paperId);
   if (error) {
     throw new Error(`Could not set fixture paper abstract: ${error.message}`);
@@ -366,19 +597,21 @@ function findAnchor(
     (page) => page.pageIndex === pageIndexHint,
   );
   if (hintedPage) {
-    for (const match of hintedPage.text.matchAll(
-      new RegExp(patternSource, "giu"),
-    )) {
-      if (
+    const matches = [
+      ...hintedPage.text.matchAll(new RegExp(patternSource, "giu")),
+    ];
+    const headingMatch = matches.find(
+      (match) =>
         match.index !== undefined &&
         sectionHeadingPrefix.test(
           hintedPage.text.slice(Math.max(0, match.index - 24), match.index),
-        )
-      ) {
-        const anchor = makeAnchor(hintedPage, match);
-        if (anchor) {
-          return anchor;
-        }
+        ),
+    );
+    const match = headingMatch ?? matches[0];
+    if (match) {
+      const anchor = makeAnchor(hintedPage, match);
+      if (anchor) {
+        return anchor;
       }
     }
   }
@@ -394,22 +627,6 @@ function findAnchor(
   }
   throw new Error(`Could not find anchor text in the PDF: ${phrase}`);
 }
-
-const SHARED_ANNOTATION_PHRASES: {
-  phrase: string;
-  pageIndexHint?: number;
-}[] = [
-  { phrase: "Scaled Dot-Product Attention", pageIndexHint: 3 },
-  { phrase: "Multi-Head Attention", pageIndexHint: 3 },
-  {
-    phrase:
-      "We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.",
-  },
-  {
-    phrase:
-      "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
-  },
-];
 
 async function ensureSharedAnnotations(
   alice: DemoIdentity,
@@ -506,35 +723,38 @@ async function ensureThread(
   alice: DemoIdentity,
   bob: DemoIdentity,
   annotation: Annotation,
+  thread: DemoThread,
 ): Promise<void> {
-  const rootBody =
-    "The scaled dot-product formulation makes the attention weights easy to compare across tokens.";
-  const replyBody =
-    "Agreed. Dividing by the square root of the key dimension is the detail worth discussing.";
+  const authorIdentity = (author: DemoRole) =>
+    author === "alice" ? alice : bob;
+  const rootAuthor = authorIdentity(thread.root.author);
   const root = annotation.comments.find(
     (comment) =>
-      comment.author.id === alice.user.id &&
-      comment.body === rootBody &&
+      comment.author.id === rootAuthor.user.id &&
+      comment.body === thread.root.body &&
       !comment.deleted,
   );
   const rootId =
     root?.id ??
     (
-      await addComment(alice.client, alice.user, annotation.id, {
-        body: rootBody,
+      await addComment(rootAuthor.client, rootAuthor.user, annotation.id, {
+        body: thread.root.body,
       })
     ).id;
-  const hasReply = root?.replies.some(
-    (reply) =>
-      reply.author.id === bob.user.id &&
-      reply.body === replyBody &&
-      !reply.deleted,
-  );
-  if (!hasReply) {
-    await addComment(bob.client, bob.user, annotation.id, {
-      body: replyBody,
-      parentId: rootId,
-    });
+  for (const reply of thread.replies) {
+    const replyAuthor = authorIdentity(reply.author);
+    const hasReply = root?.replies.some(
+      (existingReply) =>
+        existingReply.author.id === replyAuthor.user.id &&
+        existingReply.body === reply.body &&
+        !existingReply.deleted,
+    );
+    if (!hasReply) {
+      await addComment(replyAuthor.client, replyAuthor.user, annotation.id, {
+        body: reply.body,
+        parentId: rootId,
+      });
+    }
   }
 }
 
@@ -549,77 +769,109 @@ async function seed(): Promise<void> {
   const group = await ensureGroup(alice);
   await ensureBobMembership(bob, group.id, group.inviteCode);
 
-  const pdfPath = path.join(
-    process.cwd(),
-    "fixtures",
-    "papers",
-    ARXIV_ID,
-    "paper.pdf",
-  );
-  const pdfBytes = readFileSync(pdfPath);
-  if (!pdfBytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
-    throw new Error(`Fixture is not a PDF: ${pdfPath}`);
-  }
-  const extracted = await extractPdf(new Uint8Array(pdfBytes));
-  const sharedAnchors = SHARED_ANNOTATION_PHRASES.map(
-    ({ phrase, pageIndexHint }) =>
-      findAnchor(extracted, phrase, pageIndexHint),
-  );
+  for (const paper of DEMO_PAPERS) {
+    const pdfPath = path.join(
+      process.cwd(),
+      "fixtures",
+      "papers",
+      paper.fixtureDir,
+      "paper.pdf",
+    );
+    const pdfBytes = readFileSync(pdfPath);
+    if (!pdfBytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
+      throw new Error(`Fixture is not a PDF: ${pdfPath}`);
+    }
+    const extracted = await extractPdf(new Uint8Array(pdfBytes));
+    const sharedAnchors = paper.sharedAnnotationPhrases.map(
+      ({ phrase, pageIndexHint }) =>
+        findAnchor(extracted, phrase, pageIndexHint),
+    );
 
-  const paperId = await ensurePaper(alice, admin, group.id, pdfBytes);
-  await ensurePaperAbstract(admin, paperId);
-  await processPaperIfNeeded(admin, paperId);
-  const shared = await ensureSharedAnnotations(
-    alice,
-    group.id,
-    paperId,
-    sharedAnchors,
-  );
-  const privateAnnotation = await ensureBobPrivateAnnotation(
-    bob,
-    group.id,
-    paperId,
-    sharedAnchors[1]!,
-  );
-  await ensureThread(alice, bob, shared[0]!);
+    const paperId = await ensurePaper(
+      alice,
+      admin,
+      group.id,
+      paper,
+      pdfBytes,
+    );
+    await ensurePaperAbstract(admin, paperId, paper.abstract);
+    await processPaperIfNeeded(admin, paperId);
+    const shared = await ensureSharedAnnotations(
+      alice,
+      group.id,
+      paperId,
+      sharedAnchors,
+    );
+    const privatePhraseIndex = paper.sharedAnnotationPhrases.findIndex(
+      ({ phrase }) =>
+        normalizeQuote(phrase) === normalizeQuote(paper.bobPrivateNotePhrase),
+    );
+    const privateAnchor =
+      privatePhraseIndex < 0
+        ? findAnchor(extracted, paper.bobPrivateNotePhrase)
+        : sharedAnchors[privatePhraseIndex]!;
+    const privateAnnotation = await ensureBobPrivateAnnotation(
+      bob,
+      group.id,
+      paperId,
+      privateAnchor,
+    );
+    for (const thread of paper.threads) {
+      const annotation = shared[thread.annotationIndex];
+      if (!annotation) {
+        throw new Error(
+          `Thread references a missing shared annotation for ${paper.arxivId}.`,
+        );
+      }
+      await ensureThread(alice, bob, annotation, thread);
+    }
 
-  const { data: bobPrivate, error: bobReadError } = await bob.client
-    .from("annotations")
-    .select("id")
-    .eq("id", privateAnnotation.id);
-  if (bobReadError || !bobPrivate?.some((row) => row.id === privateAnnotation.id)) {
-    throw new Error(
-      `Bob could not read his private annotation: ${bobReadError?.message ?? "row missing"}`,
+    const { data: bobPrivate, error: bobReadError } = await bob.client
+      .from("annotations")
+      .select("id")
+      .eq("id", privateAnnotation.id);
+    if (
+      bobReadError ||
+      !bobPrivate?.some((row) => row.id === privateAnnotation.id)
+    ) {
+      throw new Error(
+        `Bob could not read his private annotation for ${paper.arxivId}: ${bobReadError?.message ?? "row missing"}`,
+      );
+    }
+    const { data: alicePrivate, error: aliceReadError } = await alice.client
+      .from("annotations")
+      .select("id")
+      .eq("id", privateAnnotation.id);
+    if (aliceReadError || (alicePrivate?.length ?? 0) !== 0) {
+      throw new Error(
+        `RLS check failed: Alice can read Bob's private annotation for ${paper.arxivId}${aliceReadError ? ` (${aliceReadError.message})` : ""}.`,
+      );
+    }
+
+    const reviews = await listReviews(
+      alice.client,
+      alice.user,
+      group.id,
+      paperId,
+    );
+    if (!reviews.some((review) => review.author.id === alice.user.id)) {
+      await upsertMyReview(
+        alice.client,
+        alice.user,
+        group.id,
+        paperId,
+        paper.aliceReview,
+      );
+    }
+
+    console.log(
+      `Seeded ${paper.metadata.title} (arXiv:${paper.arxivId}) in ${GROUP_NAME}.`,
+    );
+    console.log(
+      `RLS check passed for ${paper.arxivId}: Alice cannot read Bob's private annotation.`,
     );
   }
-  const { data: alicePrivate, error: aliceReadError } = await alice.client
-    .from("annotations")
-    .select("id")
-    .eq("id", privateAnnotation.id);
-  if (aliceReadError || (alicePrivate?.length ?? 0) !== 0) {
-    throw new Error(
-      `RLS check failed: Alice can read Bob's private annotation${aliceReadError ? ` (${aliceReadError.message})` : ""}.`,
-    );
-  }
 
-  const reviews = await listReviews(alice.client, alice.user, group.id, paperId);
-  if (!reviews.some((review) => review.author.id === alice.user.id)) {
-    await upsertMyReview(alice.client, alice.user, group.id, paperId, {
-      tldr: "The Transformer replaces recurrence with attention and enables more parallel training.",
-      contributions: [
-        "A sequence transduction architecture based solely on attention.",
-        "Multi-head attention and positional encodings for sequence order.",
-      ],
-      strengths: ["Clear architecture", "Strong translation results"],
-      weaknesses: ["The original evaluation focuses on two translation tasks"],
-      findings: ["28.4 BLEU on WMT 2014 English-to-German"],
-      openQuestions: ["How does the architecture generalize beyond machine translation?"],
-      relevance: "A foundational reference for our shared attention reading list.",
-    });
-  }
-
-  console.log(`Seeded ${GROUP_NAME} with ${PAPER_TITLE} (arXiv:${ARXIV_ID}).`);
-  console.log("RLS check passed: Alice cannot read Bob's private annotation.");
   console.log(`Alice: ${ALICE.email} / ${DEMO_PASSWORD} (group owner)`);
   console.log(`Bob:   ${BOB.email} / ${DEMO_PASSWORD} (group member)`);
 }

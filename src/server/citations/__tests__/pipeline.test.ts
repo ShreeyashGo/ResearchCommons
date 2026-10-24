@@ -78,4 +78,21 @@ describe("analyzePaper on fixtures", () => {
       expect(context.rects.length).toBeGreaterThan(0);
     }
   }, 120_000);
+
+  it("works on a fifth arXiv fixture (Agentic Misalignment)", async () => {
+    const id = "2510.05179";
+    const res = await analyzePaper(fixturePdf(id), { arxivId: id, fetchImpl: fixtureFetch(id) });
+    console.log("[quality][agentic]", JSON.stringify(res.stats));
+    expect(res.pageCount).toBeGreaterThan(15);
+    expect(res.stats.refsFound).toBeGreaterThanOrEqual(50);
+    expect(res.stats.markersTotal).toBeGreaterThan(0);
+    expect(res.stats.markersLinked / res.stats.markersTotal).toBeGreaterThanOrEqual(0.95);
+    expect(res.stats.resolved + res.stats.ambiguous + res.stats.unresolved).toBe(
+      res.stats.refsFound,
+    );
+    for (const context of res.contexts) {
+      expect(context.sentence.length).toBeGreaterThan(10);
+      expect(context.rects.length).toBeGreaterThan(0);
+    }
+  }, 120_000);
 });
