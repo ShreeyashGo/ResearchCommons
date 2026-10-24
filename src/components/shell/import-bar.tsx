@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { FileUp, Link2, Plus } from "lucide-react";
 import { api, ApiClientError } from "@/lib/client/api";
+import { MAX_PDF_BYTES } from "@/contracts";
 import { Button, Input } from "@/components/ui/controls";
 import { cn } from "@/lib/client/utils";
 
@@ -37,6 +38,13 @@ export function ImportBar({
 
   async function upload(file: File) {
     if (!groupId) return;
+    if (file.size > MAX_PDF_BYTES) {
+      setError(
+        `PDF is too large — the limit is ${Math.round(MAX_PDF_BYTES / 1024 / 1024)} MB.`,
+      );
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     setBusy("upload");
     setError(null);
     try {

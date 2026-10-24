@@ -63,16 +63,25 @@ export function PdfViewer({
     setRoot(scrollRef.current);
   }, []);
 
+  // Latest onMap prop in a ref: the page render effect depends on `onMap`,
+  // so an inline lambda from the caller must not retrigger page renders.
+  const onMapRef = useRef(onMapProp);
+  useEffect(() => {
+    onMapRef.current = onMapProp;
+  }, [onMapProp]);
+
   // Intrinsic page sizes at scale 1 (cheap: metadata only, no render).
   useEffect(() => {
     let alive = true;
     mapsRef.current.clear();
+    setSizes(null);
     (async () => {
       const out: PageSize[] = [];
       for (let i = 1; i <= doc.numPages; i++) {
         const page = await doc.getPage(i);
         const v = page.getViewport({ scale: 1 });
         out.push({ w: v.width, h: v.height });
+        page.cleanup();
       }
       if (alive) setSizes(out);
     })();
@@ -84,9 +93,9 @@ export function PdfViewer({
   const onMap = useCallback(
     (index: number, map: PageTextMap) => {
       mapsRef.current.set(index, map);
-      onMapProp?.(index, map);
+      onMapRef.current?.(index, map);
     },
-    [onMapProp],
+    [],
   );
 
   // Selection -> anchor. We compute the anchor here (it needs the page's text
@@ -227,9 +236,10 @@ function PdfPageSlot({
     let cancelled = false;
     let renderTask: { cancel(): void; promise: Promise<unknown> } | undefined;
     let textLayer: TextLayer | undefined;
+    let page: Awaited<ReturnType<typeof doc.getPage>> | undefined;
 
     (async () => {
-      const page = await doc.getPage(index + 1);
+      page = await doc.getPage(index + 1);
       if (cancelled) return;
 
       const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -269,6 +279,9 @@ function PdfPageSlot({
       try {
         renderTask?.cancel();
         textLayer?.cancel();
+      } catch {}
+      try {
+        page?.cleanup();
       } catch {}
     };
   }, [shouldRender, doc, index, scale, onMap]);

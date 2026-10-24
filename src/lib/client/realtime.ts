@@ -2,7 +2,6 @@
 
 import { paperChannelName, REALTIME_TABLES, type RealtimeTable } from "@/contracts";
 import { API_MOCK } from "./api";
-import { onMockChange } from "./mock";
 import { createBrowserSupabaseClient } from "./supabase";
 
 export type PaperChangeHandler = (table: RealtimeTable) => void;
@@ -22,11 +21,21 @@ export function subscribePaper(
   onChange: PaperChangeHandler,
 ): () => void {
   if (API_MOCK) {
-    return onMockChange((e) => {
-      if (e.groupId === groupId && e.paperId === paperId) {
-        onChange(e.table as RealtimeTable);
-      }
+    // Lazy import keeps the mock module out of real-mode bundles.
+    let unsubscribe: (() => void) | undefined;
+    let alive = true;
+    void import("./mock").then((m) => {
+      if (!alive) return;
+      unsubscribe = m.onMockChange((e) => {
+        if (e.groupId === groupId && e.paperId === paperId) {
+          onChange(e.table as RealtimeTable);
+        }
+      });
     });
+    return () => {
+      alive = false;
+      unsubscribe?.();
+    };
   }
 
   const supabase = createBrowserSupabaseClient();

@@ -15,7 +15,6 @@ import type { Group, LibraryPaper } from "@/contracts";
 import { api, API_MOCK } from "@/lib/client/api";
 import { signOut, useSessionUser } from "@/lib/client/auth";
 import { cn } from "@/lib/client/utils";
-import { mockLibraryListeners } from "@/lib/client/mock";
 import { Avatar, EmptyState, Spinner } from "@/components/ui/atoms";
 import { Button } from "@/components/ui/controls";
 import { GroupMenu } from "./group-menu";
@@ -86,14 +85,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [refreshLibrary]);
 
   // Mock-mode library live refresh (real mode gets it via realtime/refetch).
+  // The mock module is lazy-imported so it stays out of real-mode bundles.
   useEffect(() => {
     if (!API_MOCK || !activeGid) return;
+    let listeners: Set<(groupId: string) => void> | undefined;
+    let alive = true;
     const listener = (gid: string) => {
       if (gid === activeGid) refreshLibrary();
     };
-    mockLibraryListeners.add(listener);
+    void import("@/lib/client/mock").then((m) => {
+      if (!alive) return;
+      listeners = m.mockLibraryListeners;
+      listeners.add(listener);
+    });
     return () => {
-      mockLibraryListeners.delete(listener);
+      alive = false;
+      listeners?.delete(listener);
     };
   }, [activeGid, refreshLibrary]);
 

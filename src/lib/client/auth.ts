@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { API_MOCK } from "./api";
-import { MOCK_USER } from "./mock/data";
 import { createBrowserSupabaseClient } from "./supabase";
 
 export interface SessionUser {
@@ -16,7 +15,10 @@ export function isMock(): boolean {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  if (API_MOCK) return MOCK_USER;
+  if (API_MOCK) {
+    const { MOCK_USER } = await import("./mock/data");
+    return MOCK_USER;
+  }
   const supabase = createBrowserSupabaseClient();
   const { data } = await supabase.auth.getUser();
   const u = data.user;

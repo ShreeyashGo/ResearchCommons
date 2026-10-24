@@ -20,11 +20,13 @@ export function SelectionToolbar({
   y,
   onAnnotate,
   onClose,
+  error,
 }: {
   x: number;
   y: number;
   onAnnotate: (opts: { color: AnnotationColorT; visibility: AnnotationVisibilityT; withComment: boolean; body?: string }) => void;
   onClose: () => void;
+  error?: string | null;
 }) {
   const [color, setColor] = useState<AnnotationColorT>("yellow");
   const [visibility, setVisibility] = useState<AnnotationVisibilityT>("group");
@@ -70,6 +72,7 @@ export function SelectionToolbar({
             <MessageSquare size={12} />
           </button>
         </div>
+        {error && <p className="mt-1.5 text-[11px] leading-4 text-danger">{error}</p>}
         {commentMode && (
           <>
             <Textarea

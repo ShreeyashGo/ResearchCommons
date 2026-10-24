@@ -65,7 +65,10 @@ export function buildPageTextMap(textContent: TextContent, container: HTMLElemen
           break;
         }
       }
-      if (!el && divs[i]) el = divs[i];
+      // No fallback to divs[i]: when shapes diverge, index i is meaningless
+      // and an arbitrary pairing produces wrong anchor offsets. Items whose
+      // text can't be located stay unlabeled — anchors orphan rather than
+      // land on the wrong passage.
     }
     if (el) {
       el.dataset.start = String(offsets[i]);

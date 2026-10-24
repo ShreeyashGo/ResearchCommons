@@ -18,7 +18,7 @@ import type {
   Reference,
   Review,
 } from "@/contracts";
-import { AnnotationColor, AnnotationVisibility } from "@/contracts";
+import { AnnotationAnchor, AnnotationColor, AnnotationVisibility } from "@/contracts";
 import { api } from "@/lib/client/api";
 import { useSessionUser } from "@/lib/client/auth";
 import { reanchor, type PageTextMap } from "@/lib/client/anchors";
@@ -40,6 +40,7 @@ const nextCardId = () => `card-${++cardSeq}`;
 export function Reader({ groupId, paperId }: { groupId: string; paperId: string }) {
   const { user, loading: userLoading } = useSessionUser();
   const [paper, setPaper] = useState<LibraryPaper | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -53,15 +54,21 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
   const [scaleIdx, setScaleIdx] = useState(2);
   const [currentPage, setCurrentPage] = useState(0);
   const [sel, setSel] = useState<TextSelectInfo | null>(null);
-  const [thread, setThread] = useState<{ annotation: Annotation; x: number; y: number } | null>(null);
+  // The popover stores only the annotation id and reads the live record from
+  // `annotations`, so own/realtime updates appear while it's open.
+  const [thread, setThread] = useState<{ annotationId: string; x: number; y: number } | null>(null);
   const [cite, setCite] = useState<{ ctx: CitationContext; x: number; y: number } | null>(null);
   const [activeAnnId, setActiveAnnId] = useState<string | null>(null);
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const [summarizeBusy, setSummarizeBusy] = useState(false);
+  const [selError, setSelError] = useState<string | null>(null);
+  const [mapVersion, setMapVersion] = useState(0);
   const pageElements = useRef(new Map<number, HTMLDivElement>());
   const pageMaps = useRef(new Map<number, PageTextMap>());
   const pdfUrlExpiresAt = useRef<string | null>(null);
   const annIdsRef = useRef<Set<string>>(new Set());
+  const docRef = useRef<PDFDocumentProxy | null>(null);
+  const freshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scale = ZOOMS[scaleIdx];
 
   const refreshAnnotations = useCallback(
@@ -72,7 +79,9 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
         const fresh = res.annotations.filter((a) => !annIdsRef.current.has(a.id)).map((a) => a.id);
         if (fresh.length > 0) {
           setFreshIds((prev) => new Set([...prev, ...fresh]));
-          setTimeout(() => {
+          if (freshTimer.current) clearTimeout(freshTimer.current);
+          freshTimer.current = setTimeout(() => {
+            freshTimer.current = null;
             setFreshIds((prev) => {
               const next = new Set(prev);
               for (const id of fresh) next.delete(id);
@@ -112,77 +121,166 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
     [loadPdfFromUrl, paperId, groupId],
   );
 
-  // Initial load: paper, pdf, annotations, citations, reviews.
+  // Initial load per paper: paper, annotations, citations, reviews. The PDF
+  // itself is loaded by the processing-status effect below (a paper may still
+  // be pending/processing when first opened).
   useEffect(() => {
     let alive = true;
-    let docInstance: PDFDocumentProxy | null = null;
+    // Paper switch: tear down the previous document and page caches.
+    docRef.current?.destroy().catch(() => undefined);
+    docRef.current = null;
+    setDoc(null);
+    setPaper(null);
+    setPdfUrl(null);
+    setLoadError(null);
+    pageMaps.current.clear();
+    pageElements.current.clear();
+    setMapVersion(0);
     (async () => {
       try {
         const paperRes = await api.getPaper(paperId, groupId);
         if (!alive) return;
         setPaper(paperRes.paper);
+        setPdfUrl(paperRes.pdfUrl);
         pdfUrlExpiresAt.current = paperRes.pdfUrlExpiresAt;
 
         void Promise.all([
-          refreshAnnotations(),
-          refreshReviews(),
-          api
-            .getCitations(paperId)
-            .then((r) => {
-              if (!alive) return;
-              setReferences(r.references);
-              setContexts(r.contexts);
-            })
-            .catch((e: unknown) => {
-              if (!alive) return;
-              // ML citations pipeline is not live yet — degrade gracefully.
-              setCiteUnavailable(e instanceof Error ? e.message : "citations unavailable");
-            }),
+          refreshAnnotations().catch(() => undefined),
+          refreshReviews().catch(() => undefined),
         ]);
-
-        if (paperRes.pdfUrl && paperRes.paper.processingStatus === "ready") {
-          docInstance = await loadPdfFresh(paperRes.pdfUrl);
-          if (!alive) return;
-          setDoc(docInstance);
-        }
       } catch (e) {
         if (alive) setLoadError(e instanceof Error ? e.message : "Failed to load paper");
       }
     })();
     return () => {
       alive = false;
-      docInstance?.destroy().catch(() => undefined);
+      docRef.current?.destroy().catch(() => undefined);
+      docRef.current = null;
     };
-  }, [groupId, paperId, refreshAnnotations, refreshReviews, loadPdfFresh]);
+  }, [groupId, paperId, refreshAnnotations, refreshReviews]);
+
+  // Processing pipeline: while the paper is pending/processing, poll
+  // getPaper + getCitations every 2s; on `ready` load the PDF and citation
+  // markers; on `failed` stop and surface processingError.
+  useEffect(() => {
+    if (!paper) return;
+    let alive = true;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const loadReadyArtifacts = () => {
+      void api
+        .getCitations(paperId)
+        .then((r) => {
+          if (!alive) return;
+          setReferences(r.references);
+          setContexts(r.contexts);
+          setCiteUnavailable(null);
+        })
+        .catch((e: unknown) => {
+          if (!alive) return;
+          setCiteUnavailable(e instanceof Error ? e.message : "citations unavailable");
+        });
+      if (!docRef.current && pdfUrl) {
+        void loadPdfFresh(pdfUrl)
+          .then((d) => {
+            if (!alive) {
+              d.destroy().catch(() => undefined);
+              return;
+            }
+            docRef.current = d;
+            setDoc(d);
+          })
+          .catch((e: unknown) => {
+            if (alive) setLoadError(e instanceof Error ? e.message : "Failed to load PDF");
+          });
+      }
+    };
+
+    if (paper.processingStatus === "ready") {
+      loadReadyArtifacts();
+    } else if (
+      paper.processingStatus === "pending" ||
+      paper.processingStatus === "processing"
+    ) {
+      timer = setInterval(() => {
+        void api
+          .getPaper(paperId, groupId)
+          .then((res) => {
+            if (!alive) return;
+            pdfUrlExpiresAt.current = res.pdfUrlExpiresAt;
+            setPaper(res.paper);
+            setPdfUrl(res.pdfUrl);
+          })
+          .catch(() => undefined); // transient poll failure — retry next tick
+        void api
+          .getCitations(paperId)
+          .then((r) => {
+            if (!alive) return;
+            setReferences(r.references);
+            setContexts(r.contexts);
+          })
+          .catch(() => undefined);
+      }, 2000);
+    }
+    return () => {
+      alive = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [paper, pdfUrl, paperId, groupId, loadPdfFresh]);
 
   // Realtime per contracts/realtime.ts: refetch on table changes.
   useEffect(() => {
     if (!paper) return;
     return subscribePaper(groupId, paperId, (table) => {
-      if (table === "annotations" || table === "comments") void refreshAnnotations(true);
-      if (table === "paper_reviews") void refreshReviews();
+      if (table === "annotations" || table === "comments") {
+        refreshAnnotations(true).catch(() => undefined);
+      }
+      if (table === "paper_reviews") refreshReviews().catch(() => undefined);
     });
   }, [paper, groupId, paperId, refreshAnnotations, refreshReviews]);
+
+  // Clear the pending fresh-ids timer on unmount.
+  useEffect(
+    () => () => {
+      if (freshTimer.current) clearTimeout(freshTimer.current);
+    },
+    [],
+  );
+
+  const handleMap = useCallback((index: number, m: PageTextMap) => {
+    pageMaps.current.set(index, m);
+    setMapVersion((v) => v + 1);
+  }, []);
 
   const refreshCurrent = refreshAnnotations;
 
   const handleTextSelect = useCallback((info: TextSelectInfo) => {
     setThread(null);
     setCite(null);
+    setSelError(null);
     setSel(info);
   }, []);
 
   const handleAnnotate = useCallback(
     async (opts: { color: z.infer<typeof AnnotationColor>; visibility: z.infer<typeof AnnotationVisibility>; withComment: boolean; body?: string }) => {
       if (!sel) return;
+      // Contract check before POST: oversized selections are rejected by the
+      // anchor schema (quote exact <= 5000, rects <= 200) — never send a
+      // request that would 422, and never throw an uncaught ZodError.
+      const anchor = AnnotationAnchor.safeParse(sel.anchor);
+      if (!anchor.success) {
+        setSelError("Selection too large — highlight a shorter passage.");
+        return;
+      }
       await api.createAnnotation(groupId, paperId, {
-        anchor: sel.anchor,
+        anchor: anchor.data,
         color: opts.color,
         visibility: opts.visibility,
         comment: opts.withComment && opts.body?.trim() ? opts.body.trim() : undefined,
       });
       window.getSelection()?.removeAllRanges();
       setSel(null);
+      setSelError(null);
       await refreshCurrent();
     },
     [sel, groupId, paperId, refreshCurrent],
@@ -201,7 +299,7 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
     setSel(null);
     setCite(null);
     setActiveAnnId(a.id);
-    setThread({ annotation: a, x, y });
+    setThread({ annotationId: a.id, x, y });
   }, []);
 
   const handleCiteClick = useCallback(
@@ -297,7 +395,9 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
   }, [paperId, groupId, paper]);
 
   // Orphaned annotations: reanchor fails on their page (page rendered).
+  // mapVersion bumps whenever a page map lands, so this re-runs as maps arrive.
   const orphaned = useMemo(() => {
+    void mapVersion;
     const out: Annotation[] = [];
     for (const a of annotations) {
       const map = pageMaps.current.get(a.anchor.pageIndex);
@@ -305,9 +405,7 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
       if (map && el && reanchor(a.anchor, map, el) === null) out.push(a);
     }
     return out;
-    // recompute when maps arrive or annotations change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [annotations, doc]);
+  }, [annotations, mapVersion]);
 
   const selectFromPanel = useCallback(
     (a: Annotation) => {
@@ -317,12 +415,16 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
         if (el) {
           const rect = el.getBoundingClientRect();
           const r = a.anchor.rects[0];
-          setThread({ annotation: a, x: rect.left + (r.x + r.w) * rect.width, y: rect.top + r.y * rect.height });
+          setThread({ annotationId: a.id, x: rect.left + (r.x + r.w) * rect.width, y: rect.top + r.y * rect.height });
         }
       }, 350);
     },
     [jumpToAnnotation],
   );
+
+  const threadAnnotation = thread
+    ? (annotations.find((a) => a.id === thread.annotationId) ?? null)
+    : null;
 
   if (userLoading || (!paper && !loadError)) {
     return (
@@ -418,7 +520,7 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
               doc={doc}
               scale={scale}
               pageElements={pageElements}
-              onMap={(i, m) => pageMaps.current.set(i, m)}
+              onMap={handleMap}
               onVisiblePage={setCurrentPage}
               onTextSelect={handleTextSelect}
               renderOverlay={(page) => (
@@ -466,16 +568,18 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
             <SelectionToolbar
               x={sel.x}
               y={sel.y}
+              error={selError}
               onAnnotate={(o) => void handleAnnotate(o)}
               onClose={() => {
                 setSel(null);
+                setSelError(null);
                 window.getSelection()?.removeAllRanges();
               }}
             />
           )}
-          {thread && (
+          {thread && threadAnnotation && (
             <ThreadPopover
-              annotation={thread.annotation}
+              annotation={threadAnnotation}
               user={user}
               anchor={{ x: thread.x, y: thread.y }}
               onClose={() => {
@@ -489,7 +593,7 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
                 setTab("discussion");
                 setTimeout(() => {
                   document
-                    .querySelector(`[data-ann-id="${thread.annotation.id}"]`)
+                    .querySelector(`[data-ann-id="${threadAnnotation.id}"]`)
                     ?.scrollIntoView({ behavior: "smooth", block: "center" });
                 }, 60);
               }}
