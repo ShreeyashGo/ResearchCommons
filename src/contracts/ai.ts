@@ -134,4 +134,4 @@ export interface CitationInput {
   contexts: Array<{ sentence: string; paragraph: string | null; markerText: string }>;
 }
 
-export const PROMPT_VERSION = { paper_summary: "summary-v2", citation_explanation: "explain-v1", ask_paper: "ask-v1" } as const;
+export const PROMPT_VERSION = { paper_summary: "summary-v3", citation_explanation: "explain-v1", ask_paper: "ask-v1" } as const;

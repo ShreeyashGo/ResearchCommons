@@ -1,5 +1,6 @@
 import type { LLMGenerateJsonArgs, LLMProvider } from "@/contracts/ai";
 import { readContexts, readField, readSection } from "../prompts";
+import { demoSummaryFor } from "./demo-summaries";
 
 /** First `n` sentences of a block of prose (naive but deterministic). */
 function firstSentences(text: string, n: number): string {
@@ -44,8 +45,11 @@ export const mockProvider: LLMProvider = {
       const title = readField(work ?? "", "TITLE") ?? "Untitled work";
       const abstract = readField(work ?? "", "ABSTRACT");
       const fullText = readSection(args.prompt, "FULL_TEXT_EXCERPT") || null;
-      // Prefer the extracted full text so grounding="full_text" is honest.
-      const source = fullText ?? abstract;
+      const grounding = fullText ? "full_text" : abstract ? "abstract_only" : "metadata_only";
+      const curated = demoSummaryFor(title);
+      if (curated) return args.schema.parse({ ...curated, grounding }) as T;
+      // The abstract reads as a summary; the full-text excerpt starts with the author block.
+      const source = abstract ?? fullText;
       const summary = source
         ? firstSentences(source, 3)
         : `No abstract or full text is available for "${title}".`;
@@ -54,7 +58,7 @@ export const mockProvider: LLMProvider = {
       return args.schema.parse({
         summary: summary.slice(0, 2000),
         keyContribution: (keySource?.trim() || firstSentences(source ?? title, 1) || title).slice(0, 1000),
-        grounding: fullText ? "full_text" : abstract ? "abstract_only" : "metadata_only",
+        grounding,
       }) as T;
     }
 
