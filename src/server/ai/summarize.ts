@@ -120,17 +120,20 @@ export async function summarizeWork(
   // Grounding is computed from what we actually supplied, never trusted to the model.
   const summary: WorkSummary = { ...generated, grounding };
 
-  await storeCached(admin, {
-    kind: "paper_summary",
-    cacheKey,
-    paperId: subject.paperId ?? null,
-    externalWorkId: subject.externalWorkId ?? null,
-    referenceId: null,
-    provider,
-    promptVersion: PROMPT_VERSION.paper_summary,
-    grounding,
-    output: summary,
-  });
+  // ai_summaries requires a subject id; uncacheable anonymous works just return.
+  if (subject.paperId || subject.externalWorkId) {
+    await storeCached(admin, {
+      kind: "paper_summary",
+      cacheKey,
+      paperId: subject.paperId ?? null,
+      externalWorkId: subject.externalWorkId ?? null,
+      referenceId: null,
+      provider,
+      promptVersion: PROMPT_VERSION.paper_summary,
+      grounding,
+      output: summary,
+    });
+  }
 
   return {
     summary,

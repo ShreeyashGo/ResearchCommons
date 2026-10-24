@@ -44,7 +44,8 @@ export const mockProvider: LLMProvider = {
       const title = readField(work, "TITLE") ?? "Untitled work";
       const abstract = readField(work, "ABSTRACT");
       const fullText = readSection(args.prompt, "FULL_TEXT_EXCERPT");
-      const source = abstract ?? fullText;
+      // Prefer the extracted full text so grounding="full_text" is honest.
+      const source = fullText ?? abstract;
       const summary = source
         ? firstSentences(source, 3)
         : `No abstract or full text is available for "${title}".`;
@@ -52,7 +53,7 @@ export const mockProvider: LLMProvider = {
       // Validate the mock output against the same schema as real providers.
       return args.schema.parse({
         summary: summary.slice(0, 2000),
-        keyContribution: (keySource?.trim() || firstSentences(source ?? title, 1)).slice(0, 1000),
+        keyContribution: (keySource?.trim() || firstSentences(source ?? title, 1) || title).slice(0, 1000),
         grounding: fullText ? "full_text" : abstract ? "abstract_only" : "metadata_only",
       }) as T;
     }

@@ -21,15 +21,24 @@ function authorsLine(authors: string[]): string {
   return authors.slice(0, 8).join("; ") || "unknown";
 }
 
+/**
+ * Neutralize lines in paper-derived text that could forge our section markers
+ * (e.g. "===END===") — mitigation only; model output is still schema-checked
+ * and evidence is verified verbatim downstream.
+ */
+function sanitizeInput(s: string): string {
+  return s.replace(/^\s*=+\s*[A-Z_ ]*=*\s*$/gm, " ");
+}
+
 export function buildSummaryPrompt(work: WorkInput): string {
   return [
     "===WORK===",
-    `TITLE: ${work.title}`,
-    `AUTHORS: ${authorsLine(work.authors)}`,
+    `TITLE: ${sanitizeInput(work.title)}`,
+    `AUTHORS: ${authorsLine(work.authors.map(sanitizeInput))}`,
     `YEAR: ${work.year ?? "unknown"}`,
-    `ABSTRACT: ${work.abstract ?? "N/A"}`,
+    `ABSTRACT: ${sanitizeInput(work.abstract ?? "N/A")}`,
     work.fullText ? "===FULL_TEXT_EXCERPT===" : "",
-    work.fullText ? work.fullText : "",
+    work.fullText ? sanitizeInput(work.fullText) : "",
     "===END===",
   ]
     .filter((l) => l !== "")
@@ -39,18 +48,18 @@ export function buildSummaryPrompt(work: WorkInput): string {
 export function buildExplainPrompt(input: CitationInput): string {
   const contexts = input.contexts
     .slice(0, 8)
-    .map((c, i) => `CONTEXT[${i}] ${c.sentence}`)
+    .map((c, i) => `CONTEXT[${i}] ${sanitizeInput(c.sentence)}`)
     .join("\n");
   return [
     "===CITING_PAPER===",
-    `TITLE: ${input.citingPaper.title}`,
-    `ABSTRACT: ${input.citingPaper.abstract ?? "N/A"}`,
+    `TITLE: ${sanitizeInput(input.citingPaper.title)}`,
+    `ABSTRACT: ${sanitizeInput(input.citingPaper.abstract ?? "N/A")}`,
     "===CITED_WORK===",
-    `TITLE: ${input.citedWork.title}`,
-    `AUTHORS: ${authorsLine(input.citedWork.authors)}`,
+    `TITLE: ${sanitizeInput(input.citedWork.title)}`,
+    `AUTHORS: ${authorsLine(input.citedWork.authors.map(sanitizeInput))}`,
     `YEAR: ${input.citedWork.year ?? "unknown"}`,
     `URL: ${input.citedWork.url ?? "N/A"}`,
-    `ABSTRACT: ${input.citedWork.abstract ?? "N/A"}`,
+    `ABSTRACT: ${sanitizeInput(input.citedWork.abstract ?? "N/A")}`,
     "===CITATION_CONTEXTS===",
     contexts || "CONTEXT[0] N/A",
     "===END===",

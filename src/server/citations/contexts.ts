@@ -107,6 +107,7 @@ export function buildContexts(
   pages: PageText[],
 ): CitationContextInsert[] {
   const out: CitationContextInsert[] = [];
+  const consumedOccurrences = new Map<string, number>();
   for (const m of markers) {
     if (!entriesByOrdinal.has(m.refOrdinal)) continue;
     const page = pages[m.pageIndex];
@@ -120,7 +121,12 @@ export function buildContexts(
 
     let sentence: string;
     const haystack = paragraph ?? anchorText;
-    const pos = haystack.indexOf(m.markerText);
+    // repeated identical markers in one paragraph each take the next occurrence
+    const seenKey = `${page.pageIndex}|${haystack.length}|${haystack.slice(0, 40)}|${m.markerText}`;
+    const seenPos = consumedOccurrences.get(seenKey) ?? -1;
+    let pos = haystack.indexOf(m.markerText, seenPos + 1);
+    if (pos < 0) pos = haystack.indexOf(m.markerText);
+    else consumedOccurrences.set(seenKey, pos + m.markerText.length - 1);
     if (pos >= 0) {
       sentence = sentenceAt(haystack, pos + Math.floor(m.markerText.length / 2));
     } else {

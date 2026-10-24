@@ -47,8 +47,9 @@ export async function analyzePaper(
  * than STALE_PROCESSING_MS is assumed crashed and may be re-claimed. Uses the
  * service-role client.
  */
-export async function claimPaperProcessing(paperId: string): Promise<boolean> {
-  const admin = createAdminClient();
+type Admin = ReturnType<typeof createAdminClient>;
+
+async function claimRun(admin: Admin, paperId: string): Promise<boolean> {
   const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const { data: claimed, error } = await admin
     .from("papers")
@@ -63,16 +64,33 @@ export async function claimPaperProcessing(paperId: string): Promise<boolean> {
   return (claimed?.length ?? 0) > 0;
 }
 
+export async function claimPaperProcessing(paperId: string): Promise<boolean> {
+  return claimRun(createAdminClient(), paperId);
+}
+
+/**
+ * Run the pipeline body for a paper whose processing run was already claimed
+ * (e.g. by the POST /process route, which claims first so it can return 409).
+ */
+export async function runClaimedPaperProcessing(paperId: string): Promise<void> {
+  await runPaperProcessing(createAdminClient(), paperId);
+}
+
 /**
  * Idempotent citation-intelligence run for one canonical paper.
- * Sets papers.processing_status processing -> ready | failed (with
- * processing_error), deletes and rewrites paper_references + citation_contexts,
+ * Self-claims the run (no-op when a live run already owns the paper), then sets
+ * papers.processing_status processing -> ready | failed (with
+ * processing_error), rewrites paper_references + citation_contexts atomically,
  * and upserts external_works. Uses the service-role client: callers MUST have
  * already authorized the action with the user-scoped client.
  */
 export async function startPaperProcessing(paperId: string): Promise<void> {
   const admin = createAdminClient();
+  if (!(await claimRun(admin, paperId))) return; // a live run owns this paper
+  await runPaperProcessing(admin, paperId);
+}
 
+async function runPaperProcessing(admin: Admin, paperId: string): Promise<void> {
   const { data: paper, error: paperErr } = await admin
     .from("papers")
     .select("id,arxiv_id,storage_path,title")
