@@ -61,6 +61,7 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
   const [activeAnnId, setActiveAnnId] = useState<string | null>(null);
   const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
   const [summarizeBusy, setSummarizeBusy] = useState(false);
+  const [askBusy, setAskBusy] = useState(false);
   const [selError, setSelError] = useState<string | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
   const pageElements = useRef(new Map<number, HTMLDivElement>());
@@ -293,6 +294,47 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
       setActiveAnnId(a.id);
     },
     [],
+  );
+
+  const jumpToPage = useCallback((pageIndex: number) => {
+    pageElements.current.get(pageIndex)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const handleAsk = useCallback(
+    async (question: string) => {
+      setPanelOpen(true);
+      setTab("ai");
+      setAskBusy(true);
+      // Client-held history: prior ask turns, oldest first, capped at 6.
+      const history = aiCards
+        .filter((c): c is Extract<AiCard, { kind: "ask" }> => c.kind === "ask")
+        .slice(-3)
+        .flatMap((c) => [
+          { role: "user" as const, content: c.question },
+          { role: "assistant" as const, content: c.answer.answer },
+        ]);
+      const id = nextCardId();
+      setAiCards((cs) => [...cs, { id, kind: "loading", label: "Asking the paper…" }]);
+      try {
+        const res = await api.askPaper(paperId, { groupId, question, history });
+        setAiCards((cs) =>
+          cs.map((c) =>
+            c.id === id ? { id, kind: "ask", question, answer: res.answer, meta: res.meta } : c,
+          ),
+        );
+      } catch (e) {
+        setAiCards((cs) =>
+          cs.map((c) =>
+            c.id === id
+              ? { id, kind: "ask_error", question, reason: e instanceof Error ? e.message : "Ask failed" }
+              : c,
+          ),
+        );
+      } finally {
+        setAskBusy(false);
+      }
+    },
+    [paperId, groupId, aiCards],
   );
 
   const handleBadgeClick = useCallback((a: Annotation, x: number, y: number) => {
@@ -624,7 +666,10 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
             onSummarize={() => void handleSummarize()}
             onSelectAnnotation={selectFromPanel}
             onRefreshReviews={() => void refreshReviews()}
+            onAsk={(q) => void handleAsk(q)}
+            onJumpToPage={jumpToPage}
             summarizeBusy={summarizeBusy}
+            askBusy={askBusy}
             citeNotice={citeUnavailable}
           />
         )}
