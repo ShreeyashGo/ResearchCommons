@@ -43,6 +43,28 @@ Built in one day at the **Devin Hackathon** at **HackerHouse, Georgia Tech**.
 ## Screenshots
 
 <!-- screenshots -->
+<sub>Light on the left, dark on the right.</sub>
+
+**Landing**
+
+<img src="docs/assets/screenshots/01-landing.png" alt="Landing" width="100%" />
+
+**Koala Lab dashboard**
+
+<img src="docs/assets/screenshots/02-dashboard.png" alt="Koala Lab dashboard" width="100%" />
+
+**Reader: highlight dots + live thread**
+
+<img src="docs/assets/screenshots/03-reader.png" alt="Reader: highlight dots + live thread" width="100%" />
+
+**Citation preview: [2] → Bahdanau et al.**
+
+<img src="docs/assets/screenshots/04-citation.png" alt="Citation preview: [2] → Bahdanau et al." width="100%" />
+
+**AI summary grounded in full text**
+
+<img src="docs/assets/screenshots/05-summary.png" alt="AI summary grounded in full text" width="100%" />
+
 
 ## Quickstart
 
