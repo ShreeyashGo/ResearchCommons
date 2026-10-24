@@ -78,4 +78,31 @@ describe("parseBibliography (fixtures)", () => {
     const variational = entries.find((e) => /auto-encoding variational/i.test(e.title ?? ""));
     expect(variational?.year).toBe(2013);
   });
+
+  it("extracts clean titles from Attention bibliography entries", async () => {
+    const ex = await extractPdf(await fixturePdf("1706.03762"));
+    const entries = parseBibliography(ex.pages);
+    const expected = [
+      ["arXiv:1607.06450", "Layer normalization"],
+      [
+        "arXiv:1701.06538",
+        "Outrageously large neural networks: The sparsely-gated mixture-of-experts layer",
+      ],
+      [
+        "arXiv:1705.03122",
+        "Convolutional sequence to sequence learning",
+      ],
+      [
+        "arXiv:1511.06114",
+        "Multi-task sequence to sequence learning",
+      ],
+      ["9(8):1735–1780", "Long short-term memory"],
+    ] as const;
+
+    for (const [marker, title] of expected) {
+      const entry = entries.find((candidate) => candidate.rawText.includes(marker));
+      expect(entry, `Missing bibliography entry containing ${marker}`).toBeDefined();
+      expect(entry?.title).toBe(title);
+    }
+  });
 });

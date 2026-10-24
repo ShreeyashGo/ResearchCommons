@@ -48,7 +48,7 @@ describe("analyzePaper on fixtures", () => {
     expect(res.pageCount).toBeGreaterThan(5);
     expect(res.stats.refsFound).toBeGreaterThan(15);
     expect(res.stats.markersLinked).toBeGreaterThan(10);
-    expect(res.stats.resolved).toBeGreaterThan(5);
+    expect(res.stats.resolved).toBeGreaterThanOrEqual(30);
     expect(res.stats.resolved + res.stats.ambiguous + res.stats.unresolved).toBe(
       res.stats.refsFound,
     );
