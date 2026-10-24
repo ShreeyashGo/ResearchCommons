@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:rls": "set -a && . ./.env.local && set +a && RLS_TESTS=1 vitest run tests/rls/rls.smoke.test.ts",
     "test:e2e": "playwright test",
     "db:start": "supabase start",
     "db:stop": "supabase stop",

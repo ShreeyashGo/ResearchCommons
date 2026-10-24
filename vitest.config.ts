@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+const rlsTestsEnabled = process.env.RLS_TESTS === "1";
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -9,6 +11,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: ["tests/e2e/**", "node_modules/**", ".next/**"],
+    exclude: [
+      "tests/e2e/**",
+      ...(rlsTestsEnabled ? [] : ["tests/rls/**"]),
+      "node_modules/**",
+      ".next/**",
+    ],
   },
 });

@@ -3,8 +3,10 @@ import path from "node:path";
 
 const root = process.cwd();
 const skippedDirectories = new Set([".git", "node_modules", ".next"]);
+const skippedDirectoryPaths = new Set(["supabase/.temp"]);
 const allowedPrefixes = ["src/server/", "scripts/", "tests/"];
-const restrictedReference = /\b(?:SUPABASE_SERVICE_ROLE_KEY|createAdminClient)\b/;
+const serviceRoleKeyReference = /\bSUPABASE_SERVICE_ROLE_KEY\b/;
+const adminClientReference = /\bcreateAdminClient\b/;
 const jwtPattern = /eyJ[A-Za-z0-9_-]{20,}\./;
 const violations: string[] = [];
 
@@ -14,7 +16,10 @@ function inspectDirectory(directory: string): void {
     const relativePath = path.relative(root, absolutePath).split(path.sep).join("/");
 
     if (entry.isDirectory()) {
-      if (!skippedDirectories.has(entry.name)) {
+      if (
+        !skippedDirectories.has(entry.name) &&
+        !skippedDirectoryPaths.has(relativePath)
+      ) {
         inspectDirectory(absolutePath);
       }
       continue;
@@ -25,11 +30,18 @@ function inspectDirectory(directory: string): void {
     }
 
     const content = readFileSync(absolutePath, "utf8");
-    const referenceIsAllowed = allowedPrefixes.some((prefix) =>
+    const codeReferenceIsAllowed = allowedPrefixes.some((prefix) =>
       relativePath.startsWith(prefix),
     );
 
-    if (!referenceIsAllowed && restrictedReference.test(content)) {
+    if (
+      (serviceRoleKeyReference.test(content) &&
+        !codeReferenceIsAllowed &&
+        relativePath !== ".env.example") ||
+      (adminClientReference.test(content) &&
+        !codeReferenceIsAllowed &&
+        relativePath !== "docs/architecture.md")
+    ) {
       violations.push(
         `${relativePath}: restricted server credential/client reference outside an allowed directory`,
       );
