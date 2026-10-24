@@ -74,6 +74,31 @@ export type ExplainCitationResponse = z.infer<typeof ExplainCitationResponse>;
 export const PaperSummaryRequest = z.object({ groupId: Uuid });
 export const PaperSummaryResponse = z.object({ summary: WorkSummary, meta: AiMeta });
 
+// POST /api/papers/:pid/ask   body: AskPaperRequest
+// Q&A grounded in the paper being read (full text when extractable). Not cached or persisted (MVP).
+// 404 unless member + paper linked to group, or annotationId not visible to caller; 502 on invalid AI output.
+export const AskTurn = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(4000) });
+export const AskPaperRequest = z.object({
+  groupId: Uuid,
+  question: z.string().trim().min(3).max(1000),
+  /** Optional focus passage: the annotation's quote is added to the context. */
+  annotationId: Uuid.optional(),
+  /** Client-held prior turns for follow-ups (oldest first). */
+  history: z.array(AskTurn).max(6).default([]),
+});
+export type AskPaperRequest = z.infer<typeof AskPaperRequest>;
+export const PaperAnswer = z.object({
+  answer: z.string().min(1).max(4000),
+  /** Verbatim passages from the paper supporting the answer; pageIndex is 0-based. */
+  evidence: z.array(z.object({ pageIndex: z.number().int().min(0), quote: z.string().min(1).max(600) })).max(5),
+  grounding: Grounding,
+  /** True when the paper does not answer the question; `answer` must say so rather than guess. */
+  notFoundInPaper: z.boolean(),
+});
+export type PaperAnswer = z.infer<typeof PaperAnswer>;
+export const AskPaperResponse = z.object({ answer: PaperAnswer, meta: AiMeta });
+export type AskPaperResponse = z.infer<typeof AskPaperResponse>;
+
 // ---------------------------------------------------------------------------
 // Server-side interfaces (implemented in src/server/ai). Not HTTP.
 // ---------------------------------------------------------------------------
@@ -109,4 +134,4 @@ export interface CitationInput {
   contexts: Array<{ sentence: string; paragraph: string | null; markerText: string }>;
 }
 
-export const PROMPT_VERSION = { paper_summary: "summary-v1", citation_explanation: "explain-v1" } as const;
+export const PROMPT_VERSION = { paper_summary: "summary-v1", citation_explanation: "explain-v1", ask_paper: "ask-v1" } as const;
