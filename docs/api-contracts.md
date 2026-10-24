@@ -29,6 +29,7 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/papers/:pid/process` | — | 202 `ProcessPaperResponse` | idempotent re-run; 409 if processing |
 | POST | `/api/papers/:pid/citations/:refId/explain` | `ExplainCitationRequest` | `ExplainCitationResponse` | cached-or-generate; `unavailable` when unresolved/no context |
 | POST | `/api/papers/:pid/summary` | `PaperSummaryRequest` | `PaperSummaryResponse` | full-text grounded when available |
+| POST | `/api/papers/:pid/ask` | `AskPaperRequest` | `AskPaperResponse` | Q&A grounded in the paper (full text when available); evidence = verbatim quotes with pageIndex; `notFoundInPaper` instead of guessing; not cached |
 | GET | `/api/groups/:gid/dashboard` | — | `DashboardResponse` | |
 
 Realtime contract: `src/contracts/realtime.ts`. Server interfaces for AI: `LLMProvider`, `WorkInput`, `CitationInput` in `src/contracts/ai.ts`.
