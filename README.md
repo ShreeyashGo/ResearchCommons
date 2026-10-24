@@ -20,6 +20,8 @@
 
 Built in one day at the **Devin Hackathon** at **HackerHouse, Georgia Tech**.
 
+**[▶ Watch the 45-second demo](docs/assets/demo.mp4)** (dark mode, Alice and Bob in Koala Lab)
+
 ## Why
 
 - Research is growing faster than our capacity to read it.

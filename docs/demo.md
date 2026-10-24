@@ -1,5 +1,7 @@
 # Local demo
 
+Demo video: [demo.mp4](assets/demo.mp4) (45 s, dark mode).
+
 ## Prerequisites
 
 Install Docker, Node.js 20, pnpm 9, and the Supabase CLI.
