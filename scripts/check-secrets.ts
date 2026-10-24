@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
@@ -19,7 +19,11 @@ const files = execFileSync(
 
 for (const file of files) {
   const relativePath = file.split(path.sep).join("/");
-  const content = readFileSync(path.join(root, file), "utf8");
+  const absolutePath = path.join(root, file);
+  if (!existsSync(absolutePath)) {
+    continue;
+  }
+  const content = readFileSync(absolutePath, "utf8");
   const codeReferenceIsAllowed = allowedPrefixes.some((prefix) =>
     relativePath.startsWith(prefix),
   );

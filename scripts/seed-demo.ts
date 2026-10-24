@@ -436,7 +436,9 @@ async function ensureSharedAnnotations(
       (annotation) => annotation.anchor.pageIndex === anchor.pageIndex,
     );
     for (const outdated of matching.filter(
-      (annotation) => annotation.anchor.pageIndex !== anchor.pageIndex,
+      (annotation) =>
+        annotation.author.id === alice.user.id &&
+        annotation.anchor.pageIndex !== anchor.pageIndex,
     )) {
       await deleteAnnotation(alice.client, alice.user, outdated.id);
       const outdatedIndex = annotations.findIndex(
