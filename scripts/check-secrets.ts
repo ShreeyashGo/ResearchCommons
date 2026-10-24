@@ -1,59 +1,46 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const skippedDirectories = new Set([".git", "node_modules", ".next"]);
-const skippedDirectoryPaths = new Set(["supabase/.temp"]);
 const allowedPrefixes = ["src/server/", "scripts/", "tests/"];
 const serviceRoleKeyReference = /\bSUPABASE_SERVICE_ROLE_KEY\b/;
 const adminClientReference = /\bcreateAdminClient\b/;
 const jwtPattern = /eyJ[A-Za-z0-9_-]{20,}\./;
 const violations: string[] = [];
 
-function inspectDirectory(directory: string): void {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const absolutePath = path.join(directory, entry.name);
-    const relativePath = path.relative(root, absolutePath).split(path.sep).join("/");
+const files = execFileSync(
+  "git",
+  ["ls-files", "--cached", "--others", "--exclude-standard"],
+  { cwd: root, encoding: "utf8" },
+)
+  .split(/\r?\n/u)
+  .filter(Boolean);
 
-    if (entry.isDirectory()) {
-      if (
-        !skippedDirectories.has(entry.name) &&
-        !skippedDirectoryPaths.has(relativePath)
-      ) {
-        inspectDirectory(absolutePath);
-      }
-      continue;
-    }
+for (const file of files) {
+  const relativePath = file.split(path.sep).join("/");
+  const content = readFileSync(path.join(root, file), "utf8");
+  const codeReferenceIsAllowed = allowedPrefixes.some((prefix) =>
+    relativePath.startsWith(prefix),
+  );
 
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    const content = readFileSync(absolutePath, "utf8");
-    const codeReferenceIsAllowed = allowedPrefixes.some((prefix) =>
-      relativePath.startsWith(prefix),
+  if (
+    (serviceRoleKeyReference.test(content) &&
+      !codeReferenceIsAllowed &&
+      relativePath !== ".env.example") ||
+    (adminClientReference.test(content) &&
+      !codeReferenceIsAllowed &&
+      relativePath !== "docs/architecture.md")
+  ) {
+    violations.push(
+      `${relativePath}: restricted server credential/client reference outside an allowed directory`,
     );
+  }
 
-    if (
-      (serviceRoleKeyReference.test(content) &&
-        !codeReferenceIsAllowed &&
-        relativePath !== ".env.example") ||
-      (adminClientReference.test(content) &&
-        !codeReferenceIsAllowed &&
-        relativePath !== "docs/architecture.md")
-    ) {
-      violations.push(
-        `${relativePath}: restricted server credential/client reference outside an allowed directory`,
-      );
-    }
-
-    if (jwtPattern.test(content)) {
-      violations.push(`${relativePath}: JWT-looking value found`);
-    }
+  if (jwtPattern.test(content)) {
+    violations.push(`${relativePath}: JWT-looking value found`);
   }
 }
-
-inspectDirectory(root);
 
 if (violations.length > 0) {
   console.error(violations.join("\n"));
