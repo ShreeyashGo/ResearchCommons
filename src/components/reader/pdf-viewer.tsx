@@ -295,7 +295,7 @@ function PdfPageSlot({
     <div
       ref={elRef}
       data-page-index={index}
-      className="pdf-page relative shrink-0 bg-white shadow-card dark:bg-[#2e2d29]"
+      className="pdf-page relative shrink-0 bg-white shadow-card"
       style={{
         width: Math.round(size.w * scale),
         height: Math.round(size.h * scale),

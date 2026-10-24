@@ -15,6 +15,7 @@ export function GroupMenu({
   onOpenChange,
   onSelect,
   onChanged,
+  bare = false,
 }: {
   groups: Group[];
   active: Group | null;
@@ -22,6 +23,8 @@ export function GroupMenu({
   onOpenChange: (open: boolean) => void;
   onSelect: (g: Group) => void;
   onChanged: () => void;
+  /** Render only the create/join dialog (no dropdown trigger) for embedding elsewhere. */
+  bare?: boolean;
 }) {
   const [dropOpen, setDropOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -61,6 +64,67 @@ export function GroupMenu({
       setBusy(false);
     }
   }
+
+  const dialog = (
+    <Dialog open={open} onClose={() => onOpenChange(false)} title="Create or join a group">
+      <div className="mb-4 flex gap-1 rounded-lg bg-surface-2 p-1">
+        {(["create", "join"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium capitalize transition-colors",
+              tab === t ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
+            )}
+          >
+            {t === "create" ? "Create group" : "Join with code"}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        {tab === "create" ? (
+          <>
+            <Input
+              placeholder="Group name, e.g. Robustness Lab"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+            <Input
+              placeholder="Description (optional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <Input
+              placeholder="Invite code, e.g. lab42x9"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              autoFocus
+              className="font-mono"
+            />
+            <p className="text-xs text-muted">
+              Ask a group owner for their invite code — it&apos;s shown under the group name in
+              the sidebar.
+            </p>
+          </>
+        )}
+        {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-[13px] text-danger">{error}</p>}
+        <Button
+          className="w-full"
+          disabled={busy || (tab === "create" ? !name.trim() : inviteCode.trim().length < 4)}
+          onClick={submit}
+        >
+          {busy ? "…" : tab === "create" ? "Create group" : "Join group"}
+        </Button>
+      </div>
+    </Dialog>
+  );
+
+  if (bare) return dialog;
 
   return (
     <div className="relative px-3 pb-2" ref={dropRef}>
@@ -135,62 +199,7 @@ export function GroupMenu({
         </button>
       )}
 
-      <Dialog open={open} onClose={() => onOpenChange(false)} title="Create or join a group">
-        <div className="mb-4 flex gap-1 rounded-lg bg-surface-2 p-1">
-          {(["create", "join"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium capitalize transition-colors",
-                tab === t ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink",
-              )}
-            >
-              {t === "create" ? "Create group" : "Join with code"}
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-3">
-          {tab === "create" ? (
-            <>
-              <Input
-                placeholder="Group name, e.g. Robustness Lab"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-              />
-              <Input
-                placeholder="Description (optional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </>
-          ) : (
-            <>
-              <Input
-                placeholder="Invite code, e.g. lab42x9"
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                autoFocus
-                className="font-mono"
-              />
-              <p className="text-xs text-muted">
-                Ask a group owner for their invite code — it&apos;s shown under the group name in
-                the sidebar.
-              </p>
-            </>
-          )}
-          {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-[13px] text-danger">{error}</p>}
-          <Button
-            className="w-full"
-            disabled={busy || (tab === "create" ? !name.trim() : inviteCode.trim().length < 4)}
-            onClick={submit}
-          >
-            {busy ? "…" : tab === "create" ? "Create group" : "Join group"}
-          </Button>
-        </div>
-      </Dialog>
+      {dialog}
     </div>
   );
 }

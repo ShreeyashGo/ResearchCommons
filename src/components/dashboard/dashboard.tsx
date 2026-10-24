@@ -13,13 +13,26 @@ import {
 } from "lucide-react";
 import type { ActivityItem, DashboardResponse, Group, LibraryPaper } from "@/contracts";
 import { api } from "@/lib/client/api";
-import { authorColor, authorList, cn, relativeTime, truncate } from "@/lib/client/utils";
+import { authorColor, authorList, cn, PAPER_STATUS, relativeTime, truncate } from "@/lib/client/utils";
 import { Avatar, Badge, Card, EmptyState, Skeleton } from "@/components/ui/atoms";
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  delay = 0,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  delay?: number;
+}) {
   return (
-    <Card className="flex items-center gap-3 px-4 py-3.5">
-      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-2 text-ink-soft">
+    <Card
+      className="anim-fade-slide flex items-center gap-3 px-4 py-3.5 transition-transform duration-150 hover:-translate-y-0.5"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-soft text-accent-strong">
         {icon}
       </span>
       <div>
@@ -31,15 +44,16 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 function PaperRow({ groupId, paper, accent }: { groupId: string; paper: LibraryPaper; accent?: boolean }) {
+  const st = PAPER_STATUS[paper.processingStatus] ?? PAPER_STATUS.pending;
   return (
     <Link
       href={`/g/${groupId}/p/${paper.id}`}
       className={cn(
-        "flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+        "group flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors",
         accent ? "border-accent/30 bg-accent-soft/30 hover:bg-accent-soft/50" : "border-line bg-surface hover:border-line-strong",
       )}
     >
-      <FileText size={15} className="mt-0.5 shrink-0 text-muted" />
+      <FileText size={15} className="mt-0.5 shrink-0 text-muted transition-colors group-hover:text-accent" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-ink">{paper.title}</p>
         <p className="mt-0.5 text-[11px] text-muted">
@@ -48,11 +62,17 @@ function PaperRow({ groupId, paper, accent }: { groupId: string; paper: LibraryP
           {paper.addedBy ? ` by ${paper.addedBy.displayName}` : ""}
         </p>
       </div>
-      {paper.annotationCount > 0 && (
-        <Badge tone="accent">
-          <Highlighter size={10} /> {paper.annotationCount}
+      <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+        <Badge tone={st.tone} className={cn(paper.processingStatus === "processing" && "animate-pulse")}>
+          {st.label}
         </Badge>
-      )}
+        {paper.annotationCount > 0 && (
+          <Badge tone="accent">
+            <Highlighter size={10} /> {paper.annotationCount}
+          </Badge>
+        )}
+        {paper.reviewCount > 0 && <Badge>{paper.reviewCount} reviews</Badge>}
+      </span>
     </Link>
   );
 }
@@ -127,32 +147,56 @@ export function Dashboard({ groupId }: { groupId: string }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-6 py-6">
-        <header className="mb-6">
-          <div className="flex items-baseline gap-3">
+        <header className="mb-6 anim-fade-slide">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 className="font-serif text-2xl font-semibold tracking-tight">
               {group?.name ?? <Skeleton className="inline-block h-7 w-40" />}
             </h1>
-            {group && <span className="text-xs text-muted">invite · {group.inviteCode}</span>}
+            {group && (
+              <span className="flex items-center gap-2 text-xs text-muted">
+                <span className="rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[10px]">
+                  invite · {group.inviteCode}
+                </span>
+                <span>
+                  {group.memberCount} member{group.memberCount === 1 ? "" : "s"} · {group.paperCount} paper
+                  {group.paperCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            )}
           </div>
           {group?.description ? (
-            <p className="mt-1 text-sm text-ink-soft">{group.description}</p>
+            <p className="mt-1.5 max-w-2xl text-sm leading-6 text-ink-soft">{group.description}</p>
           ) : null}
         </header>
 
         {!data ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-[72px]" />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-[72px]" />
+              ))}
+            </div>
+            <div className="mt-6 grid gap-6 lg:grid-cols-5">
+              <div className="space-y-1.5 lg:col-span-3">
+                <Skeleton className="h-3 w-28" />
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} className="h-[62px]" />
+                ))}
+              </div>
+              <div className="lg:col-span-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="mt-2.5 h-64" />
+              </div>
+            </div>
+          </>
         ) : (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <StatCard icon={<BookOpen size={16} />} label="Papers" value={data.stats.papers} />
-              <StatCard icon={<Highlighter size={16} />} label="Notes" value={data.stats.annotations} />
-              <StatCard icon={<MessageSquare size={16} />} label="Comments" value={data.stats.comments} />
-              <StatCard icon={<ScrollText size={16} />} label="Reviews" value={data.stats.reviews} />
-              <StatCard icon={<Users size={16} />} label="Members" value={data.stats.members} />
+              <StatCard icon={<Highlighter size={16} />} label="Notes" value={data.stats.annotations} delay={40} />
+              <StatCard icon={<MessageSquare size={16} />} label="Comments" value={data.stats.comments} delay={80} />
+              <StatCard icon={<ScrollText size={16} />} label="Reviews" value={data.stats.reviews} delay={120} />
+              <StatCard icon={<Users size={16} />} label="Members" value={data.stats.members} delay={160} />
             </div>
 
             <div className="mt-6 grid gap-6 lg:grid-cols-5">

@@ -62,6 +62,13 @@ export function authorList(authors: string[], max = 2): string {
   return `${authors.slice(0, max).join(", ")} et al.`;
 }
 
+export const PAPER_STATUS: Record<string, { label: string; tone: "ok" | "warn" | "neutral" | "danger" }> = {
+  ready: { label: "ready", tone: "ok" },
+  pending: { label: "queued", tone: "neutral" },
+  processing: { label: "processing", tone: "warn" },
+  failed: { label: "failed", tone: "danger" },
+};
+
 export const ANNOTATION_COLORS = [
   { name: "yellow", css: "#eab308" },
   { name: "green", css: "#22c55e" },
