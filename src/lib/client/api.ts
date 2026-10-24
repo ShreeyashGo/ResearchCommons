@@ -1,6 +1,8 @@
 import type { z } from "zod";
 import {
   AnnotationResponse,
+  AskPaperRequest,
+  AskPaperResponse,
   CommentResponse,
   CreateAnnotationRequest,
   CreateCommentRequest,
@@ -100,6 +102,7 @@ export interface Api {
     req: z.input<typeof ExplainCitationRequest>,
   ): Promise<z.infer<typeof ExplainCitationResponse>>;
   paperSummary(paperId: string, req: z.input<typeof PaperSummaryRequest>): Promise<z.infer<typeof PaperSummaryResponse>>;
+  askPaper(paperId: string, req: z.input<typeof AskPaperRequest>): Promise<z.infer<typeof AskPaperResponse>>;
 
   dashboard(groupId: string): Promise<z.infer<typeof DashboardResponse>>;
 }
@@ -157,5 +160,6 @@ export const api: Api = {
   processPaper: forward("processPaper"),
   explainCitation: forward("explainCitation"),
   paperSummary: forward("paperSummary"),
+  askPaper: forward("askPaper"),
   dashboard: forward("dashboard"),
 };

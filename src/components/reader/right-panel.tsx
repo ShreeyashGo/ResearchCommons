@@ -10,6 +10,7 @@ import {
   Plus,
   Quote,
   ScrollText,
+  Send,
   Sparkles,
   Trash2,
   X,
@@ -18,6 +19,7 @@ import type {
   Annotation,
   CitationExplanation,
   LibraryPaper,
+  PaperAnswer,
   Reference,
   Review,
   WorkSummary,
@@ -38,6 +40,8 @@ export type AiCard =
   | { id: string; kind: "loading"; label: string }
   | { id: string; kind: "summary"; summary: WorkSummary; meta: AiMeta; paperTitle: string }
   | { id: string; kind: "explain"; explanation: CitationExplanation; meta: AiMeta; marker: string }
+  | { id: string; kind: "ask"; question: string; answer: PaperAnswer; meta: AiMeta }
+  | { id: string; kind: "ask_error"; question: string; reason: string }
   | { id: string; kind: "unavailable"; reference: Reference; reason: string };
 
 function AiBadge({ meta }: { meta: AiMeta }) {
@@ -60,11 +64,60 @@ function GroundingChip({ grounding }: { grounding: string }) {
   return <Badge tone={grounding === "full_text" ? "ok" : "neutral"}>{label}</Badge>;
 }
 
-function AiCardView({ card }: { card: AiCard }) {
+function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (pageIndex: number) => void }) {
   if (card.kind === "loading") {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-ai/25 bg-ai-soft/40 px-3 py-2.5 text-[12px] text-ai">
         <Spinner size={13} /> {card.label}
+      </div>
+    );
+  }
+  if (card.kind === "ask") {
+    const a = card.answer;
+    return (
+      <div className="space-y-1.5">
+        <p className="ml-6 rounded-lg rounded-tr-sm border border-line bg-surface-2 px-3 py-2 text-[12px] text-ink">
+          {card.question}
+        </p>
+        <div className="rounded-lg border border-ai/25 bg-ai-soft/30 p-3">
+          <div className="flex items-center justify-between">
+            <AiBadge meta={card.meta} />
+            <GroundingChip grounding={a.grounding} />
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-[13px] leading-5.5 text-ink">{a.answer}</p>
+          {a.notFoundInPaper && (
+            <p className="mt-1.5 text-[11px] text-muted">The paper does not appear to answer this question.</p>
+          )}
+          {a.evidence.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {a.evidence.map((ev, i) => (
+                <button
+                  key={i}
+                  onClick={() => onJumpToPage?.(ev.pageIndex)}
+                  className="flex w-full gap-1.5 rounded border-l-2 border-ai/40 pl-2 text-left text-[11px] italic leading-4.5 text-ink-soft hover:bg-ai-soft/50"
+                  title={`Go to page ${ev.pageIndex + 1}`}
+                >
+                  <Quote size={10} className="mt-0.5 shrink-0 text-ai" />
+                  <span>
+                    “{ev.quote}” <span className="not-italic text-accent">p.{ev.pageIndex + 1} ↗</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (card.kind === "ask_error") {
+    return (
+      <div className="space-y-1.5">
+        <p className="ml-6 rounded-lg rounded-tr-sm border border-line bg-surface-2 px-3 py-2 text-[12px] text-ink">
+          {card.question}
+        </p>
+        <div className="rounded-lg border border-warn/30 bg-warn-soft/40 p-3 text-[12px] text-ink-soft">
+          <AlertTriangle size={12} className="mr-1 inline text-warn" /> {card.reason}
+        </div>
       </div>
     );
   }
@@ -243,6 +296,40 @@ function ReviewCard({ review, mine, onDelete }: { review: Review; mine: boolean;
 }
 
 // ---------------------------------------------------------------------------
+// Ask composer (paper Q&A, ChatGPT-style; turns are ask cards in the AI stream)
+// ---------------------------------------------------------------------------
+
+function AskComposer({ busy, onAsk }: { busy: boolean; onAsk: (question: string) => void }) {
+  const [value, setValue] = useState("");
+  const question = value.trim();
+  function submit() {
+    if (question.length < 3 || busy) return;
+    onAsk(question);
+    setValue("");
+  }
+  return (
+    <div className="flex items-end gap-1.5">
+      <Textarea
+        rows={2}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder="Ask a question about this paper…"
+        className="flex-1 resize-none text-[12px]"
+      />
+      <Button size="xs" disabled={busy || question.length < 3} onClick={submit} aria-label="Ask">
+        {busy ? <Spinner size={12} /> : <Send size={12} />}
+      </Button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Panel shell
 // ---------------------------------------------------------------------------
 
@@ -261,7 +348,10 @@ export function RightPanel({
   onSummarize,
   onSelectAnnotation,
   onRefreshReviews,
+  onAsk,
+  onJumpToPage,
   summarizeBusy,
+  askBusy,
   citeNotice,
 }: {
   paper: LibraryPaper;
@@ -276,7 +366,10 @@ export function RightPanel({
   onSummarize: () => void;
   onSelectAnnotation: (a: Annotation) => void;
   onRefreshReviews: () => void;
+  onAsk: (question: string) => void;
+  onJumpToPage: (pageIndex: number) => void;
   summarizeBusy: boolean;
+  askBusy: boolean;
   citeNotice?: string | null;
 }) {
   const myReview = reviews.find((r) => r.author.id === user.id);
@@ -420,6 +513,7 @@ export function RightPanel({
               {summarizeBusy ? <Spinner size={13} /> : <Sparkles size={13} />}
               Summarize this paper
             </Button>
+            <AskComposer busy={askBusy} onAsk={onAsk} />
             {aiCards.length === 0 ? (
               <EmptyState
                 icon={<Sparkles size={18} />}
@@ -427,7 +521,7 @@ export function RightPanel({
                 body="Summarize this paper, or click a citation marker in the PDF and choose Explain — results stream here as cards."
               />
             ) : (
-              aiCards.map((c) => <AiCardView key={c.id} card={c} />)
+              aiCards.map((c) => <AiCardView key={c.id} card={c} onJumpToPage={onJumpToPage} />)
             )}
           </div>
         )}

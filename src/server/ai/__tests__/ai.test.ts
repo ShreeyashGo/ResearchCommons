@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CitationInput, WorkInput } from "@/contracts/ai";
-import { CitationExplanation, WorkSummary } from "@/contracts/ai";
+import { CitationExplanation, PaperAnswer, WorkSummary } from "@/contracts/ai";
 import { buildCacheKey, hashInputs, sha256Hex, stableStringify } from "../cache";
 import { filterEvidence, AiOutputError } from "../explain";
-import { buildExplainPrompt, buildSummaryPrompt } from "../prompts";
+import { buildAskPrompt, buildExplainPrompt, buildSummaryPrompt } from "../prompts";
 import { mockProvider } from "../providers/mock";
 import { summaryGrounding } from "../summarize";
 
@@ -82,6 +82,36 @@ describe("mock provider", () => {
     const a = await mockProvider.generateJson({ system: "s", prompt: buildExplainPrompt(input), schema: CitationExplanation, task: "citation_explanation" });
     const b = await mockProvider.generateJson({ system: "s", prompt: buildExplainPrompt(other), schema: CitationExplanation, task: "citation_explanation" });
     expect(a).not.toEqual(b);
+  });
+
+  const askInput = {
+    question: "How does the Transformer replace recurrence?",
+    history: [],
+    paper: { title: "Attention Is All You Need", abstract: "A paper about attention." },
+    pages: [
+      { pageIndex: 0, text: "We propose the Transformer, a network architecture based solely on attention mechanisms, dispensing with recurrence and convolutions entirely. It uses multi-head self-attention." },
+      { pageIndex: 3, text: "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. Attention allows modeling dependencies regardless of distance." },
+    ],
+  };
+
+  it("answers from matching sentences with verbatim page-tagged evidence", async () => {
+    const prompt = buildAskPrompt(askInput);
+    const a = await mockProvider.generateJson({ system: "s", prompt, schema: PaperAnswer, task: "ask_paper" });
+    expect(PaperAnswer.safeParse(a).success).toBe(true);
+    expect(a.notFoundInPaper).toBe(false);
+    expect(a.evidence.length).toBeGreaterThan(0);
+    for (const ev of a.evidence) {
+      const page = askInput.pages.find((p) => p.pageIndex === ev.pageIndex)!;
+      expect(page.text.replace(/\s+/g, " ")).toContain(ev.quote);
+    }
+  });
+
+  it("reports notFoundInPaper on an unrelated question", async () => {
+    const prompt = buildAskPrompt({ ...askInput, question: "What is the recipe for sourdough bread?" });
+    const a = await mockProvider.generateJson({ system: "s", prompt, schema: PaperAnswer, task: "ask_paper" });
+    expect(PaperAnswer.safeParse(a).success).toBe(true);
+    expect(a.notFoundInPaper).toBe(true);
+    expect(a.evidence).toEqual([]);
   });
 });
 

@@ -14,7 +14,7 @@ import type {
   UpdateCommentRequest,
   UploadPaperMetadata,
 } from "@/contracts";
-import { ReviewInput } from "@/contracts";
+import { AskPaperRequest, ReviewInput } from "@/contracts";
 import { ApiClientError, type Api } from "../api";
 import {
   dashboardFixture,
@@ -555,6 +555,36 @@ export const mockApi: Api = {
     return {
       summary: { summary: response.summary, keyContribution: response.keyContribution, grounding: response.grounding },
       meta: response.meta,
+    };
+  },
+
+  async askPaper(paperId, req: z.input<typeof AskPaperRequest>) {
+    await sleep(600);
+    const s = store();
+    const paper = [...s.papers.values()].find((p) => p.id === paperId);
+    if (!paper) throw new ApiClientError(404, { error: { code: "not_found", message: "Paper not found" } }, "not found");
+    const body = AskPaperRequest.parse(req);
+    return {
+      answer: {
+        answer: `Mock AI answer to "${body.question.slice(0, 120)}": The Transformer uses multi-head self-attention to model dependencies between all positions in parallel, replacing recurrence entirely.`,
+        evidence: [
+          {
+            pageIndex: 0,
+            quote:
+              "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+          },
+        ],
+        grounding: "full_text" as const,
+        notFoundInPaper: false,
+      },
+      meta: {
+        provider: "mock",
+        model: "mock-v1",
+        isMock: true,
+        promptVersion: "ask-v1",
+        cached: false,
+        generatedAt: new Date().toISOString(),
+      },
     };
   },
 

@@ -17,6 +17,13 @@ export const EXPLAIN_SYSTEM = [
   'Return a single JSON object: {"referencedPaper": {"title": string, "authors": string[], "year": number|null}, "summary": string, "keyContribution": string, "citationPurpose": "background"|"method_used"|"baseline_comparison"|"extends"|"contrasts"|"supports_claim"|"dataset_or_tool"|"other", "citationPurposeExplanation": string, "relationshipToCurrentPaper": string, "supportingEvidence": [{"source": "citing_context"|"cited_abstract", "quote": string}], "grounding": "full_text"|"abstract_only"|"metadata_only", "availabilityNote": string, "sourceLinks": [{"label": string, "url": string}]}.',
 ].join("\n");
 
+export const ASK_SYSTEM = [
+  "You are Research Commons' paper Q&A service. Answer the user's question using ONLY the provided paper text.",
+  "Never invent claims, numbers, or citations. If the paper does not answer the question, say so instead of guessing.",
+  'Return a single JSON object: {"answer": string, "evidence": [{"pageIndex": number, "quote": string}], "grounding": "full_text"|"abstract_only"|"metadata_only", "notFoundInPaper": boolean}.',
+  "evidence: up to 5 VERBATIM quotes copied character-for-character from the paper text, each with its 0-based pageIndex.",
+].join("\n");
+
 function authorsLine(authors: string[]): string {
   return authors.slice(0, 8).join("; ") || "unknown";
 }
@@ -64,6 +71,43 @@ export function buildExplainPrompt(input: CitationInput): string {
     contexts || "CONTEXT[0] N/A",
     "===END===",
   ].join("\n");
+}
+
+export interface AskInput {
+  question: string;
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+  paper: { title: string; abstract: string | null };
+  /** Extracted page texts (0-based pageIndex) when full text is available. */
+  pages?: Array<{ pageIndex: number; text: string }>;
+  /** Focused passage (e.g. an annotation's quote) to bias the answer toward. */
+  focusPassage?: { pageIndex: number; quote: string };
+}
+
+export function buildAskPrompt(input: AskInput): string {
+  const history = input.history
+    .slice(-6)
+    .map((t) => `${t.role === "user" ? "USER" : "ASSISTANT"}: ${sanitizeInput(t.content)}`)
+    .join("\n");
+  const pages = (input.pages ?? [])
+    .map((p) => `--- PAGE ${p.pageIndex} ---\n${sanitizeInput(p.text)}`)
+    .join("\n");
+  return [
+    "===QUESTION===",
+    sanitizeInput(input.question),
+    input.focusPassage ? "===FOCUS_PASSAGE===" : "",
+    input.focusPassage ? `PAGE: ${input.focusPassage.pageIndex}` : "",
+    input.focusPassage ? sanitizeInput(input.focusPassage.quote) : "",
+    history ? "===HISTORY===" : "",
+    history,
+    "===PAPER===",
+    `TITLE: ${sanitizeInput(input.paper.title)}`,
+    `ABSTRACT: ${sanitizeInput(input.paper.abstract ?? "N/A")}`,
+    pages ? "===PAGES===" : "",
+    pages,
+    "===END===",
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
 }
 
 // ---------------------------------------------------------------------------

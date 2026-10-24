@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   AnnotationResponse,
   ApiError,
+  AskPaperRequest,
+  AskPaperResponse,
   CommentResponse,
   CreateAnnotationRequest,
   CreateCommentRequest,
@@ -152,6 +154,8 @@ export const httpApi: Api = {
     request("POST", `/api/papers/${paperId}/citations/${referenceId}/explain`, ExplainCitationResponse, ExplainCitationRequest.parse(req)),
   paperSummary: (paperId, req: z.input<typeof PaperSummaryRequest>) =>
     request("POST", `/api/papers/${paperId}/summary`, PaperSummaryResponse, PaperSummaryRequest.parse(req)),
+  askPaper: (paperId, req: z.input<typeof AskPaperRequest>) =>
+    request("POST", `/api/papers/${paperId}/ask`, AskPaperResponse, AskPaperRequest.parse(req)),
 
   dashboard: (groupId) => request("GET", `/api/groups/${groupId}/dashboard`, DashboardResponse),
 };

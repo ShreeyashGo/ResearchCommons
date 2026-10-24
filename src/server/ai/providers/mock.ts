@@ -104,6 +104,60 @@ export const mockProvider: LLMProvider = {
       }) as T;
     }
 
+    if (args.task === "ask_paper") {
+      const question = readSection(args.prompt, "QUESTION");
+      const focus = readSection(args.prompt, "FOCUS_PASSAGE");
+      const pagesSection = readSection(args.prompt, "PAGES");
+      const paper = readSection(args.prompt, "PAPER");
+      const abstract = readField(paper, "ABSTRACT");
+
+      // Split "--- PAGE n ---" blocks into sentences tagged with their pageIndex.
+      interface Candidate { pageIndex: number; sentence: string; score: number }
+      const STOP = new Set(
+        "the a an and or of to in on for with is are was were be been by at as it its this that these those we our you your they their he she his her not no do does did can could will would should from into over under between what which who whom how why when where".split(" "),
+      );
+      const qTokens = new Set(
+        question.toLowerCase().match(/[a-z0-9]+/g)?.filter((w) => w.length > 2 && !STOP.has(w)) ?? [],
+      );
+      const candidates: Candidate[] = [];
+      for (const m of pagesSection.matchAll(/^--- PAGE (\d+) ---\n([\s\S]*?)(?=^--- PAGE \d+ ---|\n===END===|$)/gm)) {
+        const pageIndex = Number(m[1]);
+        const sentences = m[2]
+          .replace(/\s+/g, " ")
+          .split(/(?<=[.!?])\s+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 30);
+        for (const s of sentences) {
+          const words = new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+          let score = 0;
+          for (const t of qTokens) if (words.has(t)) score += 1;
+          if (score > 0) candidates.push({ pageIndex, sentence: s, score });
+        }
+      }
+      candidates.sort((a, b) => b.score - a.score || a.pageIndex - b.pageIndex);
+      const top = candidates.slice(0, 3);
+
+      if (top.length === 0 || top[0].score === 0) {
+        // Unrelated question: say so instead of guessing.
+        return args.schema.parse({
+          answer: `The paper does not appear to address "${question.slice(0, 200)}". No passage in the extracted text matches the question's key terms.`,
+          evidence: [],
+          grounding: pagesSection ? "full_text" : abstract ? "abstract_only" : "metadata_only",
+          notFoundInPaper: true,
+        }) as T;
+      }
+
+      const evidence = top.map((c) => ({ pageIndex: c.pageIndex, quote: c.sentence.slice(0, 600) }));
+      const focusNote = focus ? " (focused on your selected passage)" : "";
+      return args.schema.parse({
+        answer:
+          `Based on the paper${focusNote}: ${top.map((c) => c.sentence).join(" ")}`.slice(0, 4000),
+        evidence,
+        grounding: pagesSection ? "full_text" : abstract ? "abstract_only" : "metadata_only",
+        notFoundInPaper: false,
+      }) as T;
+    }
+
     throw new Error(`mock provider: unknown task "${args.task}"`);
   },
 };
