@@ -77,8 +77,14 @@ export interface BibEntry {
   year: number | null;
   /** Vertical span of the entry on its page (px); used to anchor cite.* destinations. */
   pageIndex: number;
+  /** Bibliography column when the page was split into two columns. */
+  column?: 0 | 1;
+  /** X-coordinate split used to classify destinations on a two-column page. */
+  columnSplitPx?: number;
   yTopPx: number;
   yBottomPx: number;
+  /** Median height of the entry's visual text lines (px), for destination tolerance. */
+  medianLineHeightPx: number;
 }
 
 export type DetectionMethod = "pdf_link" | "regex";

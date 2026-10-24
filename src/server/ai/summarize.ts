@@ -60,8 +60,11 @@ export async function summarizePaper(
           .trim();
         if (text.length > 200) fullText = text.slice(0, FULL_TEXT_LIMIT);
       }
-    } catch {
+    } catch (err) {
       // best-effort: extraction failures degrade to abstract_only grounding
+      console.warn(
+        `[summary] full-text extraction failed for ${paperId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
