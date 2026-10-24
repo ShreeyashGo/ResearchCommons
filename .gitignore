@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.log
+.DS_Store
+supabase/.temp/
+supabase/.branches/
+playwright-report/
+test-results/
