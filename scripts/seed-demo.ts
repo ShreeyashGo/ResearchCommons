@@ -12,6 +12,7 @@ import { createAdminClient } from "@/server/supabase/admin";
 import {
   addComment,
   createAnnotation,
+  deleteAnnotation,
   listAnnotations,
 } from "@/server/annotations/service";
 import { extractPdf } from "@/server/citations/extract";
@@ -24,6 +25,15 @@ const ARXIV_ID = "1706.03762";
 const GROUP_NAME = "Koala Lab";
 const DEMO_PASSWORD = "koala-demo-123";
 const PAPER_TITLE = "Attention Is All You Need";
+const PAPER_ABSTRACT = [
+  "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks that include an encoder and a decoder.",
+  "The best performing models also connect the encoder and decoder through an attention mechanism.",
+  "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+  "Experiments on two machine translation tasks show these models to be superior in quality while being more parallelizable and requiring significantly less time to train.",
+  "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
+  "On the WMT 2014 English-to-French translation task, our model establishes a new single-model state-of-the-art BLEU score of 41.8 after training for 3.5 days on eight GPUs, a small fraction of the training costs of the best models from the literature.",
+  "We show that the Transformer generalizes well to other tasks by applying it successfully to English constituency parsing both with large and limited training data.",
+].join(" ");
 const ALICE = { email: "alice@koalalab.dev", name: "Alice Koala" };
 const BOB = { email: "bob@koalalab.dev", name: "Bob Koala" };
 
@@ -255,6 +265,19 @@ async function ensurePaper(
   return imported.paperId;
 }
 
+async function ensurePaperAbstract(
+  admin: ReturnType<typeof createAdminClient>,
+  paperId: string,
+): Promise<void> {
+  const { error } = await admin
+    .from("papers")
+    .update({ abstract: PAPER_ABSTRACT })
+    .eq("id", paperId);
+  if (error) {
+    throw new Error(`Could not set fixture paper abstract: ${error.message}`);
+  }
+}
+
 async function processPaperIfNeeded(
   admin: ReturnType<typeof createAdminClient>,
   paperId: string,
@@ -292,22 +315,28 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function normalizeQuote(quote: string): string {
+  return quote.toLowerCase().replace(/\s+/gu, "");
+}
+
 function findAnchor(
   extracted: Awaited<ReturnType<typeof extractPdf>>,
   phrase: string,
+  pageIndexHint?: number,
 ): AnnotationAnchorType {
-  const pattern = new RegExp(
+  const patternSource =
     phrase
       .trim()
       .split(/\s+/u)
       .map(escapeRegExp)
-      .join("\\s*"),
-    "iu",
-  );
-  for (const page of extracted.pages) {
-    const match = pattern.exec(page.text);
-    if (!match || match.index === undefined) {
-      continue;
+      .join("\\s*");
+  const sectionHeadingPrefix = /\b\d+(?:\.\d+)+\s*$/u;
+  const makeAnchor = (
+    page: (typeof extracted.pages)[number],
+    match: RegExpMatchArray,
+  ): AnnotationAnchorType | null => {
+    if (match.index === undefined) {
+      return null;
     }
     const start = match.index;
     const end = start + match[0].length;
@@ -331,15 +360,55 @@ function findAnchor(
       },
       position: { start, end },
     });
+  };
+
+  const hintedPage = extracted.pages.find(
+    (page) => page.pageIndex === pageIndexHint,
+  );
+  if (hintedPage) {
+    for (const match of hintedPage.text.matchAll(
+      new RegExp(patternSource, "giu"),
+    )) {
+      if (
+        match.index !== undefined &&
+        sectionHeadingPrefix.test(
+          hintedPage.text.slice(Math.max(0, match.index - 24), match.index),
+        )
+      ) {
+        const anchor = makeAnchor(hintedPage, match);
+        if (anchor) {
+          return anchor;
+        }
+      }
+    }
+  }
+
+  for (const page of extracted.pages) {
+    const match = new RegExp(patternSource, "iu").exec(page.text);
+    if (match) {
+      const anchor = makeAnchor(page, match);
+      if (anchor) {
+        return anchor;
+      }
+    }
   }
   throw new Error(`Could not find anchor text in the PDF: ${phrase}`);
 }
 
-const SHARED_ANNOTATION_PHRASES = [
-  "Scaled Dot-Product Attention",
-  "Multi-Head Attention",
-  "We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.",
-  "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
+const SHARED_ANNOTATION_PHRASES: {
+  phrase: string;
+  pageIndexHint?: number;
+}[] = [
+  { phrase: "Scaled Dot-Product Attention", pageIndexHint: 3 },
+  { phrase: "Multi-Head Attention", pageIndexHint: 3 },
+  {
+    phrase:
+      "We chose the sinusoidal version because it may allow the model to extrapolate to sequence lengths longer than the ones encountered during training.",
+  },
+  {
+    phrase:
+      "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task, improving over the existing best results, including ensembles, by over 2 BLEU.",
+  },
 ];
 
 async function ensureSharedAnnotations(
@@ -357,11 +426,28 @@ async function ensureSharedAnnotations(
   const result: Annotation[] = [];
   const colors = ["yellow", "blue", "green", "purple"] as const;
   for (const [index, anchor] of anchors.entries()) {
-    const existing = annotations.find(
+    const normalizedQuote = normalizeQuote(anchor.quote.exact);
+    const matching = annotations.filter(
       (annotation) =>
         annotation.visibility === "group" &&
-        annotation.anchor.quote.exact === anchor.quote.exact,
+        normalizeQuote(annotation.anchor.quote.exact) === normalizedQuote,
     );
+    const existing = matching.find(
+      (annotation) => annotation.anchor.pageIndex === anchor.pageIndex,
+    );
+    for (const outdated of matching.filter(
+      (annotation) =>
+        annotation.author.id === alice.user.id &&
+        annotation.anchor.pageIndex !== anchor.pageIndex,
+    )) {
+      await deleteAnnotation(alice.client, alice.user, outdated.id);
+      const outdatedIndex = annotations.findIndex(
+        (annotation) => annotation.id === outdated.id,
+      );
+      if (outdatedIndex >= 0) {
+        annotations.splice(outdatedIndex, 1);
+      }
+    }
     if (existing) {
       result.push(existing);
       continue;
@@ -391,13 +477,22 @@ async function ensureBobPrivateAnnotation(
     groupId,
     paperId,
   );
-  const existing = annotations.find(
+  const normalizedQuote = normalizeQuote(anchor.quote.exact);
+  const matching = annotations.filter(
     (annotation) =>
       annotation.visibility === "private" &&
       annotation.author.id === bob.user.id &&
-      annotation.anchor.quote.exact === anchor.quote.exact,
+      normalizeQuote(annotation.anchor.quote.exact) === normalizedQuote,
   );
-  if (existing) {
+  const existing = matching.find(
+    (annotation) => annotation.anchor.pageIndex === anchor.pageIndex,
+  );
+  for (const outdated of matching.filter(
+    (annotation) => annotation.anchor.pageIndex !== anchor.pageIndex,
+  )) {
+    await deleteAnnotation(bob.client, bob.user, outdated.id);
+  }
+  if (existing && existing.anchor.pageIndex === anchor.pageIndex) {
     return existing;
   }
   return createAnnotation(bob.client, bob.user, groupId, paperId, {
@@ -466,11 +561,13 @@ async function seed(): Promise<void> {
     throw new Error(`Fixture is not a PDF: ${pdfPath}`);
   }
   const extracted = await extractPdf(new Uint8Array(pdfBytes));
-  const sharedAnchors = SHARED_ANNOTATION_PHRASES.map((phrase) =>
-    findAnchor(extracted, phrase),
+  const sharedAnchors = SHARED_ANNOTATION_PHRASES.map(
+    ({ phrase, pageIndexHint }) =>
+      findAnchor(extracted, phrase, pageIndexHint),
   );
 
   const paperId = await ensurePaper(alice, admin, group.id, pdfBytes);
+  await ensurePaperAbstract(admin, paperId);
   await processPaperIfNeeded(admin, paperId);
   const shared = await ensureSharedAnnotations(
     alice,
