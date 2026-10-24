@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import {
-  BookOpen,
   ChevronsLeft,
   PanelLeft,
   Plus,
@@ -112,9 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       >
         <div className="flex items-center gap-2 px-3 pb-2 pt-3">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-accent-ink">
-            <BookOpen size={15} />
-          </span>
+          <Image src="/logo.svg" alt="" width={24} height={24} className="h-6 w-6" />
           <span className="font-serif text-[15px] font-semibold tracking-tight">Research Commons</span>
           <div className="ml-auto flex items-center">
             <ThemeToggle />

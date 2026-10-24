@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   BookOpen,
@@ -209,7 +210,7 @@ export default function Home() {
       {/* header */}
       <header className="sticky top-0 z-40 border-b border-line bg-bg/80 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-2.5 px-5">
-          <BrandMark />
+          <Image src="/logo.svg" alt="" width={24} height={24} className="h-6 w-6" />
           <span className="font-serif text-[15px] font-semibold tracking-tight">Research Commons</span>
           <span className="ml-auto flex items-center gap-1.5">
             <ThemeToggle />
