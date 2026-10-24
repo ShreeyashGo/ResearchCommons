@@ -72,7 +72,7 @@ function linkMarkers(extracted: ExtractedPaper, entries: BibEntry[]): CitationMa
       if (!link.destName || !CITE_DEST_RE.test(link.destName)) continue;
       const target = extracted.citeTargets.get(link.destName);
       if (!target) continue;
-      const entry = entryForDest(entries, target.pageIndex, target.yPx);
+      const entry = entryForDest(entries, target.pageIndex, target.yPx, target.xPx);
       if (!entry) continue;
       const text = page.items
         .map((it) => charsInRect(it, link.rectPx))

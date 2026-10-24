@@ -223,6 +223,14 @@ interface RawEntry {
   numberLabel: number | null;
   pageIndex: number;
   lines: TextLine[];
+  column?: 0 | 1;
+  columnSplitPx?: number;
+}
+
+interface ColumnGroup {
+  lines: LineRef[];
+  column?: 0 | 1;
+  columnSplitPx?: number;
 }
 
 function isEntryStart(l: LineRef, marginX: number, numbered: boolean): boolean {
@@ -238,14 +246,14 @@ function isEntryStart(l: LineRef, marginX: number, numbered: boolean): boolean {
  * contain a gutter gap > 15% of the page width; entry splitting then runs per
  * column so hanging indents and reading order stay correct.
  */
-function splitColumns(lines: LineRef[], pageWidth: (pageIndex: number) => number): LineRef[][] {
+function splitColumns(lines: LineRef[], pageWidth: (pageIndex: number) => number): ColumnGroup[] {
   const byPage = new Map<number, LineRef[]>();
   for (const l of lines) {
     const arr = byPage.get(l.pageIndex) ?? [];
     arr.push(l);
     byPage.set(l.pageIndex, arr);
   }
-  const groups: LineRef[][] = [];
+  const groups: ColumnGroup[] = [];
   for (const pageIndex of [...byPage.keys()].sort((a, b) => a - b)) {
     const pageLines = byPage.get(pageIndex) ?? [];
     const width = pageWidth(pageIndex);
@@ -255,14 +263,17 @@ function splitColumns(lines: LineRef[], pageWidth: (pageIndex: number) => number
       if (xs[i] - xs[i - 1] > width * 0.15) gutter = (xs[i] + xs[i - 1]) / 2;
     }
     if (gutter < 0) {
-      groups.push(pageLines);
+      groups.push({ lines: pageLines });
     } else {
       const left = pageLines.filter((l) => l.line.xMin < gutter);
       const right = pageLines.filter((l) => l.line.xMin >= gutter);
       if (left.length >= 2 && right.length >= 2) {
-        groups.push(left, right);
+        groups.push(
+          { lines: left, column: 0, columnSplitPx: gutter },
+          { lines: right, column: 1, columnSplitPx: gutter },
+        );
       } else {
-        groups.push(pageLines);
+        groups.push({ lines: pageLines });
       }
     }
   }
@@ -284,14 +295,22 @@ export function parseBibliography(pages: PageText[]): BibEntry[] {
   const pageWidth = (i: number) => pages[i]?.widthPx || 612;
 
   const rawEntries: RawEntry[] = [];
-  for (const group of splitColumns(lines, pageWidth)) {
+  for (const columnGroup of splitColumns(lines, pageWidth)) {
+    const group = columnGroup.lines;
     // left margin = minimum xMin over this column's bib lines
     const marginX = Math.min(...group.map((l) => l.line.xMin));
     let cur: RawEntry | null = null;
     for (const l of group) {
       if (isEntryStart(l, marginX, numbered)) {
         const m = NUMBERED_START_RE.exec(l.line.text) ?? NUMBERED_DOT_RE.exec(l.line.text);
-        cur = { numberLabel: m ? Number(m[1]) : null, pageIndex: l.pageIndex, lines: [] };
+        cur = {
+          numberLabel: m ? Number(m[1]) : null,
+          pageIndex: l.pageIndex,
+          lines: [],
+          ...(columnGroup.column === undefined || columnGroup.columnSplitPx === undefined
+            ? {}
+            : { column: columnGroup.column, columnSplitPx: columnGroup.columnSplitPx }),
+        };
         rawEntries.push(cur);
       }
       if (!cur) continue; // preamble line between heading and first entry
@@ -323,22 +342,33 @@ export function parseBibliography(pages: PageText[]): BibEntry[] {
       yTopPx: re.lines[0].yMid - re.lines[0].hPx,
       yBottomPx: re.lines[re.lines.length - 1].yMid + re.lines[re.lines.length - 1].hPx,
       medianLineHeightPx: median(re.lines.map((line) => line.hPx)) ?? 10,
+      ...(re.column === undefined || re.columnSplitPx === undefined
+        ? {}
+        : { column: re.column, columnSplitPx: re.columnSplitPx }),
     });
   });
   return entries;
 }
 
 /**
- * Map a cite.* destination (pageIndex + anchor y) to a bibliography entry.
+ * Map a cite.* destination (pageIndex + anchor point) to a bibliography entry.
  * Destinations may sit just above their entry, so allow half a median line
  * height of tolerance and choose the latest entry start before that point.
+ * When the page was split into columns, select the destination's column first.
  */
-export function entryForDest(entries: BibEntry[], pageIndex: number, yPx: number): BibEntry | null {
+export function entryForDest(entries: BibEntry[], pageIndex: number, yPx: number, xPx?: number): BibEntry | null {
   const onPage = entries.filter((e) => e.pageIndex === pageIndex).sort((a, b) => a.yTopPx - b.yTopPx);
   if (onPage.length === 0) return null;
-  const tolerance = (median(onPage.map((entry) => entry.medianLineHeightPx)) ?? 10) / 2;
-  const candidates = onPage.filter((entry) => entry.yTopPx <= yPx + tolerance);
-  if (candidates.length === 0) return onPage[0]!;
+  let columnEntries = onPage;
+  const splitX = onPage.find((entry) => entry.columnSplitPx !== undefined)?.columnSplitPx;
+  if (xPx !== undefined && splitX !== undefined) {
+    const column = xPx < splitX ? 0 : 1;
+    columnEntries = onPage.filter((entry) => entry.column === column);
+    if (columnEntries.length === 0) return null;
+  }
+  const tolerance = (median(columnEntries.map((entry) => entry.medianLineHeightPx)) ?? 10) / 2;
+  const candidates = columnEntries.filter((entry) => entry.yTopPx <= yPx + tolerance);
+  if (candidates.length === 0) return columnEntries[0]!;
   return candidates.reduce((best, entry) =>
     entry.yTopPx > best.yTopPx ? entry : best,
   );

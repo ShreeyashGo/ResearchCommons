@@ -95,12 +95,29 @@ describe("entryForDest", () => {
     expect(entryForDest(entries, 1, 97)?.ordinal).toBe(1);
   });
 
+  it("chooses the later entry when the destination is inside the previous entry but within tolerance", () => {
+    const boundary = [
+      bibEntry({ ordinal: 1, numberLabel: 1, yTopPx: 100, yBottomPx: 130 }),
+      bibEntry({ ordinal: 2, numberLabel: 2, yTopPx: 110, yBottomPx: 140 }),
+    ];
+    expect(entryForDest(boundary, 1, 105)?.ordinal).toBe(2);
+  });
+
   it("chooses the later entry when destination boxes overlap", () => {
     const overlapping = [
       bibEntry({ ordinal: 1, numberLabel: 1, yTopPx: 100, yBottomPx: 140 }),
       bibEntry({ ordinal: 2, numberLabel: 2, yTopPx: 130, yBottomPx: 170 }),
     ];
     expect(entryForDest(overlapping, 1, 131)?.ordinal).toBe(2);
+  });
+
+  it("restricts overlapping destinations to the target's bibliography column", () => {
+    const twoColumns = [
+      bibEntry({ ordinal: 1, numberLabel: 1, yTopPx: 100, yBottomPx: 160, column: 0, columnSplitPx: 300 }),
+      bibEntry({ ordinal: 2, numberLabel: 2, yTopPx: 120, yBottomPx: 180, column: 1, columnSplitPx: 300 }),
+    ];
+    expect(entryForDest(twoColumns, 1, 130, 100)?.ordinal).toBe(1);
+    expect(entryForDest(twoColumns, 1, 130, 400)?.ordinal).toBe(2);
   });
 
   it("falls back to the first entry when the destination is above all entries", () => {
