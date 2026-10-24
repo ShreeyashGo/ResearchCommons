@@ -1,40 +1,24 @@
-import { NextResponse, type NextRequest } from "next/server";
 import { PaperSummaryRequest, PaperSummaryResponse } from "@/contracts/ai";
+import { notFound } from "@/server/http/errors";
+import { json, parseJson, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
 import { summarizePaper } from "@/server/ai/summarize";
-import {
-  HttpError,
-  parseJsonBody,
-  requireGroupPaperAccess,
-  requireUser,
-  toJsonError,
-} from "@/server/citations/http";
-import { createUserClient } from "@/server/supabase/user";
-
-interface RouteCtx {
-  params: Promise<{ pid: string }>;
-}
+import { requireGroupPaperAccess } from "@/server/citations/http";
 
 /**
  * POST /api/papers/:pid/summary — cached-or-generate summary of the paper being
  * read. Grounded in full text when the stored PDF can be extracted, else the
  * abstract (or metadata only).
  */
-export async function POST(req: NextRequest, ctx: RouteCtx) {
-  try {
-    const { pid } = await ctx.params;
-    const body = await parseJsonBody(req, PaperSummaryRequest);
+export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
+  const { pid } = await ctx.params;
+  uuidParam(pid);
+  const body = await parseJson(req, PaperSummaryRequest);
 
-    const supabase = await createUserClient();
-    await requireUser(supabase);
-    await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
+  const { supabase } = await requireUser();
+  await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
 
-    const result = await summarizePaper(pid);
-    if (!result) throw new HttpError("not_found", "paper not found");
+  const result = await summarizePaper(pid);
+  if (!result) throw notFound("paper not found");
 
-    return NextResponse.json(
-      PaperSummaryResponse.parse({ summary: result.summary, meta: result.meta }),
-    );
-  } catch (err) {
-    return toJsonError(err);
-  }
-}
+  return json(PaperSummaryResponse.parse({ summary: result.summary, meta: result.meta }));
+});

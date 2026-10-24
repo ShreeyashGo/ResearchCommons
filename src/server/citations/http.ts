@@ -1,55 +1,9 @@
 import "server-only";
 
-import { NextResponse } from "next/server";
-import type { z } from "zod";
-import { HTTP_STATUS, type ApiError, type ErrorCode } from "@/contracts/common";
+import { internal, notFound } from "@/server/http/errors";
+import type { Session } from "@/server/http/handler";
 
-type UserClient = Awaited<ReturnType<typeof import("@/server/supabase/user").createUserClient>>;
-
-/** Route-local helpers (the shared src/server/http module lands with the backend track). */
-export class HttpError extends Error {
-  constructor(
-    public code: ErrorCode,
-    message: string,
-    public details?: unknown,
-  ) {
-    super(message);
-  }
-}
-
-export function errorBody(err: HttpError): ApiError {
-  return { error: { code: err.code, message: err.message, details: err.details } };
-}
-
-export function jsonError(err: HttpError): NextResponse {
-  return NextResponse.json(errorBody(err), { status: HTTP_STATUS[err.code] });
-}
-
-export function toJsonError(err: unknown): NextResponse {
-  if (err instanceof HttpError) return jsonError(err);
-  console.error("[api] unexpected error:", err);
-  return jsonError(new HttpError("internal", "internal error"));
-}
-
-export async function requireUser(supabase: UserClient) {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) throw new HttpError("unauthenticated", "sign in required");
-  return data.user;
-}
-
-export async function parseJsonBody<T>(req: Request, schema: z.ZodType<T>): Promise<T> {
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    throw new HttpError("validation_failed", "request body must be JSON");
-  }
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    throw new HttpError("validation_failed", "invalid request body", parsed.error.issues);
-  }
-  return parsed.data;
-}
+type UserClient = Session["supabase"];
 
 /**
  * RLS-checked read: the papers row is only visible when can_read_paper() holds.
@@ -62,8 +16,8 @@ export async function requirePaperAccess(supabase: UserClient, paperId: string) 
     .select("id,title,authors,abstract,year,arxiv_id,processing_status,processing_error")
     .eq("id", paperId)
     .maybeSingle();
-  if (error) throw new HttpError("internal", `papers read failed: ${error.message}`);
-  if (!data) throw new HttpError("not_found", "paper not found");
+  if (error) throw internal(`papers read failed: ${error.message}`);
+  if (!data) throw notFound("paper not found");
   return data;
 }
 
@@ -79,6 +33,6 @@ export async function requireGroupPaperAccess(supabase: UserClient, paperId: str
     .eq("group_id", groupId)
     .eq("paper_id", paperId)
     .maybeSingle();
-  if (error) throw new HttpError("internal", `group_papers read failed: ${error.message}`);
-  if (!data) throw new HttpError("not_found", "paper not found");
+  if (error) throw internal(`group_papers read failed: ${error.message}`);
+  if (!data) throw notFound("paper not found");
 }
