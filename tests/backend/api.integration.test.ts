@@ -208,6 +208,13 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
     });
     expect(retagged.tags).toEqual(["retagged"]);
 
+    // A member who is neither owner nor adder cannot retag.
+    await expect(
+      updatePaperTags(b.client, b.id, group.id, first.paperId, {
+        tags: ["nope"],
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+
     // Non-PDF uploads are rejected before touching storage.
     const notPdf = new File([new TextEncoder().encode("hello")], "x.pdf", {
       type: "application/pdf",
@@ -324,6 +331,12 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
     });
     expect(edited.body).toBe("edited reply");
     await deleteComment(b.client, b.user, reply.id);
+    await expect(
+      addComment(a.client, a.user, created.id, {
+        body: "reply to deleted",
+        parentId: reply.id,
+      }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
     const list = await listAnnotations(a.client, a.user, group.id, pid);
     const thread = list
       .find((x) => x.id === created.id)

@@ -215,8 +215,13 @@ export async function updatePaperTags(
   paperId: string,
   input: z.infer<typeof UpdateLibraryPaperRequest>,
 ): Promise<LibraryPaper> {
-  await requireGroupMember(supabase, groupId, userId);
-  await requirePaperInGroup(supabase, groupId, paperId);
+  const { role } = await requireGroupMember(supabase, groupId, userId);
+  const link = await requirePaperInGroup(supabase, groupId, paperId);
+  if (role !== "owner" && link.added_by !== userId) {
+    throw forbidden(
+      "Only the group owner or the member who added the paper can retag it.",
+    );
+  }
   const { error } = await supabase
     .from("group_papers")
     .update({ tags: input.tags })
@@ -286,6 +291,23 @@ export interface ImportResult {
   paper: LibraryPaper;
   paperId: string;
   deduplicated: boolean;
+}
+
+/** Upload the PDF to the `papers` bucket and record storage_path on the row. */
+async function storePaperPdf(
+  admin: SupabaseClient,
+  paper: PaperRow,
+  bytes: Uint8Array,
+): Promise<PaperRow> {
+  const storagePath = await uploadPaperPdf(admin, paper.id, bytes);
+  const { error } = await admin
+    .from("papers")
+    .update({ storage_path: storagePath })
+    .eq("id", paper.id);
+  if (error) {
+    throw internal(`Could not record PDF location: ${error.message}`);
+  }
+  return { ...paper, storage_path: storagePath };
 }
 
 export async function importArxivPaper(
@@ -362,32 +384,50 @@ export async function importArxivPaper(
         .single();
       if (insertError) {
         if (insertError.code === "23505") {
-          // Lost a concurrent insert race; use the winner's canonical row.
-          const { data: raced } = await admin
+          // Lost a concurrent insert race; find the winner's canonical row
+          // (unique keys are separate columns, so look them up separately).
+          const { data: byId, error: byIdError } = await admin
             .from("papers")
             .select("*")
-            .or(`arxiv_id.eq.${arxivId},pdf_sha256.eq.${sha256}`)
+            .eq("arxiv_id", arxivId)
             .maybeSingle();
+          if (byIdError) {
+            throw internal(`Paper lookup failed: ${byIdError.message}`);
+          }
+          let raced = (byId as PaperRow | null) ?? null;
+          if (!raced) {
+            const { data: byShaAgain, error: byShaAgainError } = await admin
+              .from("papers")
+              .select("*")
+              .eq("pdf_sha256", sha256)
+              .maybeSingle();
+            if (byShaAgainError) {
+              throw internal(`Paper lookup failed: ${byShaAgainError.message}`);
+            }
+            raced = (byShaAgain as PaperRow | null) ?? null;
+          }
           if (!raced) {
             throw internal(`Could not import paper: ${insertError.message}`);
           }
-          paper = raced as PaperRow;
+          paper = raced;
           deduplicated = true;
         } else {
           throw internal(`Could not import paper: ${insertError.message}`);
         }
       } else {
         paper = inserted as PaperRow;
-        const storagePath = await uploadPaperPdf(admin, paper.id, pdfBytes);
-        const { error: updateError } = await admin
-          .from("papers")
-          .update({ storage_path: storagePath })
-          .eq("id", paper.id);
-        if (updateError) {
-          throw internal(`Could not record PDF location: ${updateError.message}`);
+        try {
+          paper = await storePaperPdf(admin, paper, pdfBytes);
+        } catch (error) {
+          // Don't leave an orphaned row whose PDF never landed in storage.
+          await admin.from("papers").delete().eq("id", paper.id);
+          throw error;
         }
-        paper = { ...paper, storage_path: storagePath };
       }
+    }
+    if (deduplicated && !paper.storage_path) {
+      // Repair a deduped paper whose PDF is missing now that we have the bytes.
+      paper = await storePaperPdf(admin, paper, pdfBytes);
     }
   }
 
@@ -492,13 +532,15 @@ export async function uploadPaper(
       .single();
     if (insertError) {
       if (insertError.code === "23505") {
-        const { data: raced } = await admin
+        const { data: raced, error: racedError } = await admin
           .from("papers")
           .select("*")
           .eq("pdf_sha256", sha256)
           .single();
-        if (!raced) {
-          throw internal(`Could not upload paper: ${insertError.message}`);
+        if (racedError || !raced) {
+          throw internal(
+            `Could not upload paper: ${racedError?.message ?? insertError.message}`,
+          );
         }
         paper = raced as PaperRow;
         deduplicated = true;
@@ -507,16 +549,18 @@ export async function uploadPaper(
       }
     } else {
       paper = inserted as PaperRow;
-      const storagePath = await uploadPaperPdf(admin, paper.id, bytes);
-      const { error: updateError } = await admin
-        .from("papers")
-        .update({ storage_path: storagePath })
-        .eq("id", paper.id);
-      if (updateError) {
-        throw internal(`Could not record PDF location: ${updateError.message}`);
+      try {
+        paper = await storePaperPdf(admin, paper, bytes);
+      } catch (error) {
+        // Don't leave an orphaned row whose PDF never landed in storage.
+        await admin.from("papers").delete().eq("id", paper.id);
+        throw error;
       }
-      paper = { ...paper, storage_path: storagePath };
     }
+  }
+  if (deduplicated && !paper.storage_path) {
+    // Repair a deduped paper whose PDF is missing now that we have the bytes.
+    paper = await storePaperPdf(admin, paper, bytes);
   }
 
   await linkToGroup(supabase, groupId, paper.id, user.id, meta.tags);

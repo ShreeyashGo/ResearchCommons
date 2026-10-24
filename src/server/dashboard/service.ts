@@ -15,11 +15,16 @@ async function countRows(
   supabase: SupabaseClient,
   table: string,
   groupId: string,
+  excludeSoftDeleted = false,
 ): Promise<number> {
-  const { count, error } = await supabase
+  let query = supabase
     .from(table)
     .select("*", { count: "exact", head: true })
     .eq("group_id", groupId);
+  if (excludeSoftDeleted) {
+    query = query.is("deleted_at", null);
+  }
+  const { count, error } = await query;
   if (error) {
     throw internal(`Count failed for ${table}: ${error.message}`);
   }
@@ -49,7 +54,7 @@ export async function getDashboard(
   ] = await Promise.all([
     countRows(supabase, "group_papers", groupId),
     countRows(supabase, "annotations", groupId),
-    countRows(supabase, "comments", groupId),
+    countRows(supabase, "comments", groupId, true),
     countRows(supabase, "paper_reviews", groupId),
     countRows(supabase, "group_memberships", groupId),
     fetchLibraryEntries(supabase, groupId),

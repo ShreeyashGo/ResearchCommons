@@ -1,9 +1,12 @@
 import "server-only";
 
+import { MAX_PDF_BYTES } from "@/contracts/papers";
 import { HttpError, upstreamFailed, validationFailed } from "@/server/http/errors";
 
+// (?<![\w.]) keeps the match from starting mid-word/number so bogus input
+// like "123456.789012" is rejected; (?!\d) rejects a trailing extra digit.
 const ARXIV_ID_PATTERN =
-  /(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z]{2})?\/\d{7})(v\d+)?/i;
+  /(?<![\w.])(\d{4}\.\d{4,5}(?!\d)|[a-z-]+(?:\.[a-z]{2})?\/\d{7})(v\d+)?/i;
 
 export interface ArxivMetadata {
   arxivId: string;
@@ -21,7 +24,7 @@ export interface ArxivMetadata {
  */
 export function normalizeArxivId(input: string): string | null {
   const match = ARXIV_ID_PATTERN.exec(input.trim());
-  return match ? (match[1] ?? null) : null;
+  return match?.[1] ? match[1].toLowerCase() : null;
 }
 
 function decodeXml(text: string): string {
@@ -107,7 +110,40 @@ export async function downloadArxivPdf(arxivId: string): Promise<Uint8Array> {
   if (!res.ok) {
     throw upstreamFailed(`arXiv PDF download returned ${res.status}.`);
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
+  const declaredLength = Number.parseInt(
+    res.headers.get("content-length") ?? "",
+    10,
+  );
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PDF_BYTES) {
+    throw upstreamFailed("arXiv PDF exceeds the 20 MiB limit.");
+  }
+  if (!res.body) {
+    throw upstreamFailed("arXiv PDF response had no body.");
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_PDF_BYTES) {
+        await reader.cancel();
+        throw upstreamFailed("arXiv PDF exceeds the 20 MiB limit.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   if (!isPdf(bytes)) {
     throw upstreamFailed("arXiv did not return a PDF document.");
   }

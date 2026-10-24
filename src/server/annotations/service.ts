@@ -280,7 +280,7 @@ export async function addComment(
   if (input.parentId) {
     const { data: parent, error: parentError } = await supabase
       .from("comments")
-      .select("id, annotation_id, parent_id")
+      .select("id, annotation_id, parent_id, deleted_at")
       .eq("id", input.parentId)
       .maybeSingle();
     if (parentError) {
@@ -288,6 +288,9 @@ export async function addComment(
     }
     if (!parent || parent.annotation_id !== annotationId) {
       throw notFound("Parent comment not found on this annotation.");
+    }
+    if (parent.deleted_at !== null) {
+      throw validationFailed("Cannot reply to a deleted comment.");
     }
     if (parent.parent_id !== null) {
       throw validationFailed("Replies can only be nested one level deep.");
