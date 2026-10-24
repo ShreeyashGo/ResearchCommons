@@ -535,9 +535,9 @@ export const mockApi: Api = {
     if (!paper) throw new ApiClientError(404, { error: { code: "not_found", message: "Paper not found" } }, "not found");
     const response = {
       summary:
-        "This paper compares three sparse attention families — block, strided, and routed — at identical compute budgets on a new long-context retrieval benchmark of 2,400 literature questions. Routed (learned, content-dependent) sparsity recovers 97% of dense-attention accuracy at a fifth of the compute, with the gap widening as context grows.",
+        "This paper introduces the Transformer, a sequence transduction architecture that relies entirely on multi-head self-attention, dispensing with recurrence and convolutions. On WMT 2014 English-to-German it sets a new state of the art at 28.4 BLEU, and 41.0 BLEU on English-to-French, while training faster than recurrent and convolutional baselines.",
       keyContribution:
-        "A controlled comparison showing learned routing beats fixed sparse patterns, plus a released retrieval benchmark.",
+        "The Transformer architecture and the demonstration that self-attention alone outperforms encoder-decoder RNNs and CNNs for machine translation.",
       grounding: "full_text" as const,
       meta: {
         provider: "mock",

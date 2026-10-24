@@ -157,6 +157,41 @@ export interface SelectionAnchorResult {
 }
 
 /**
+ * Page-text offset of the visible end of a selection whose end boundary fell
+ * outside the page's text spans (margin, textLayer edge, page boundary).
+ * Resolves the exact caret under the selection's last client rect when the
+ * browser supports it, else the end of the last intersecting span.
+ */
+function clippedSelectionEnd(range: Range, pageEl: HTMLElement, map: PageTextMap): number | null {
+  const selRects = range.getClientRects();
+  if (selRects.length === 0) return null;
+
+  const lastRect = selRects[selRects.length - 1];
+  const doc = pageEl.ownerDocument;
+  const caret = doc.caretRangeFromPoint?.(lastRect.right - 1, lastRect.top + lastRect.height / 2);
+  if (caret) {
+    const caretSpan = ownerSpan(caret.startContainer);
+    const r = caretSpan && pageEl.contains(caretSpan) ? spanRange(caretSpan) : null;
+    if (caretSpan && r) {
+      return r[0] + charOffsetWithin(caretSpan, caret.startContainer, caret.startOffset);
+    }
+  }
+
+  let lastIntersecting: HTMLElement | null = null;
+  for (const span of map.spans) {
+    const sr = span.getBoundingClientRect();
+    for (const cr of selRects) {
+      if (cr.right >= sr.left && cr.left <= sr.right && cr.bottom >= sr.top && cr.top <= sr.bottom) {
+        lastIntersecting = span;
+        break;
+      }
+    }
+  }
+  if (!lastIntersecting) return null;
+  return spanRange(lastIntersecting)![1];
+}
+
+/**
  * Convert the current DOM selection inside a pdf page element into an
  * AnnotationAnchor, or null when the selection doesn't cover page text.
  * Multi-page selections are clipped to the starting page (MVP rule, §5).
@@ -182,17 +217,25 @@ export function anchorFromSelection(
   if (endSpan && pageEl.contains(endSpan) && spanRange(endSpan)) {
     end = spanRange(endSpan)![0] + charOffsetWithin(endSpan, range.endContainer, range.endOffset);
   } else {
-    // Clipped: selection continues past this page.
-    end = map.text.length;
+    // Clipped: the mouse-up landed outside this page's text spans. Anchor at
+    // the last text position the selection actually covers — not page end.
+    end = clippedSelectionEnd(range, pageEl, map) ?? map.text.length;
   }
 
   if (end <= start) return null;
 
   const clippedRange = range.cloneRange();
-  if (!endSpan || !pageEl.contains(endSpan)) {
-    const lastSpan = map.spans[map.spans.length - 1];
-    if (lastSpan?.lastChild) {
-      clippedRange.setEnd(lastSpan.lastChild, (lastSpan.lastChild.textContent ?? "").length);
+  const endOwner = map.spans.find((s) => {
+    const r = spanRange(s);
+    return r !== null && end > r[0] && end <= r[1];
+  });
+  if (endOwner) {
+    const tn = firstTextNode(endOwner);
+    if (tn) {
+      clippedRange.setEnd(
+        tn,
+        Math.min((tn.textContent ?? "").length, end - spanRange(endOwner)![0]),
+      );
     }
   }
 
