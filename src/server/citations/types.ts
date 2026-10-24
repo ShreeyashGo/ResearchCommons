@@ -79,6 +79,8 @@ export interface BibEntry {
   pageIndex: number;
   yTopPx: number;
   yBottomPx: number;
+  /** Median height of the entry's visual text lines (px), for destination tolerance. */
+  medianLineHeightPx: number;
 }
 
 export type DetectionMethod = "pdf_link" | "regex";

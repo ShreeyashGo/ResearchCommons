@@ -40,10 +40,10 @@ export const mockProvider: LLMProvider = {
 
   async generateJson<T>(args: LLMGenerateJsonArgs<T>): Promise<T> {
     if (args.task === "paper_summary") {
-      const work = readSection(args.prompt, "WORK");
-      const title = readField(work, "TITLE") ?? "Untitled work";
-      const abstract = readField(work, "ABSTRACT");
-      const fullText = readSection(args.prompt, "FULL_TEXT_EXCERPT");
+      const work = readSection(args.prompt, "WORK") || null;
+      const title = readField(work ?? "", "TITLE") ?? "Untitled work";
+      const abstract = readField(work ?? "", "ABSTRACT");
+      const fullText = readSection(args.prompt, "FULL_TEXT_EXCERPT") || null;
       // Prefer the extracted full text so grounding="full_text" is honest.
       const source = fullText ?? abstract;
       const summary = source
@@ -59,19 +59,19 @@ export const mockProvider: LLMProvider = {
     }
 
     if (args.task === "citation_explanation") {
-      const cited = readSection(args.prompt, "CITED_WORK");
-      const citing = readSection(args.prompt, "CITING_PAPER");
+      const cited = readSection(args.prompt, "CITED_WORK") || null;
+      const citing = readSection(args.prompt, "CITING_PAPER") || null;
       const contexts = readContexts(args.prompt);
-      const title = readField(cited, "TITLE") ?? "Unknown work";
-      const authors = (readField(cited, "AUTHORS") ?? "")
+      const title = readField(cited ?? "", "TITLE") ?? "Unknown work";
+      const authors = (readField(cited ?? "", "AUTHORS") ?? "")
         .split(";")
         .map((s) => s.trim())
         .filter(Boolean);
-      const yearRaw = readField(cited, "YEAR");
+      const yearRaw = readField(cited ?? "", "YEAR");
       const year = yearRaw && /^\d+$/.test(yearRaw) ? Number(yearRaw) : null;
-      const url = readField(cited, "URL");
-      const abstract = readField(cited, "ABSTRACT");
-      const citingTitle = readField(citing, "TITLE") ?? "the citing paper";
+      const url = readField(cited ?? "", "URL");
+      const abstract = readField(cited ?? "", "ABSTRACT");
+      const citingTitle = readField(citing ?? "", "TITLE") ?? "the citing paper";
 
       const ctx = contexts[0] ?? "";
       const purpose = classifyPurpose(contexts);

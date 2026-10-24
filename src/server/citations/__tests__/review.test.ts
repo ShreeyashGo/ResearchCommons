@@ -59,6 +59,7 @@ function bibEntry(over: Partial<BibEntry>): BibEntry {
     pageIndex: 1,
     yTopPx: 100,
     yBottomPx: 124,
+    medianLineHeightPx: 12,
     ...over,
   };
 }
@@ -92,6 +93,18 @@ describe("entryForDest", () => {
   it("anchors a few px above the entry top pick the nearest entry", () => {
     expect(entryForDest(entries, 1, 196)?.ordinal).toBe(2);
     expect(entryForDest(entries, 1, 97)?.ordinal).toBe(1);
+  });
+
+  it("chooses the later entry when destination boxes overlap", () => {
+    const overlapping = [
+      bibEntry({ ordinal: 1, numberLabel: 1, yTopPx: 100, yBottomPx: 140 }),
+      bibEntry({ ordinal: 2, numberLabel: 2, yTopPx: 130, yBottomPx: 170 }),
+    ];
+    expect(entryForDest(overlapping, 1, 131)?.ordinal).toBe(2);
+  });
+
+  it("falls back to the first entry when the destination is above all entries", () => {
+    expect(entryForDest(entries, 1, 80)?.ordinal).toBe(1);
   });
 });
 

@@ -47,6 +47,23 @@ describe("mock provider", () => {
     expect(a.grounding).toBe("abstract_only");
   });
 
+  it("uses the abstract when the full-text section is absent", async () => {
+    const firstSentence = "The abstract begins with this specific result.";
+    const prompt = buildSummaryPrompt({
+      ...work,
+      abstract: `${firstSentence} The rest of the abstract adds context.`,
+      fullText: undefined,
+    });
+    const result = await mockProvider.generateJson({
+      system: "s",
+      prompt,
+      schema: WorkSummary,
+      task: "paper_summary",
+    });
+    expect(result.summary.startsWith(firstSentence)).toBe(true);
+    expect(result.grounding).toBe("abstract_only");
+  });
+
   it("is deterministic and schema-valid for explanations", async () => {
     const prompt = buildExplainPrompt(input);
     const a = await mockProvider.generateJson({ system: "s", prompt, schema: CitationExplanation, task: "citation_explanation" });

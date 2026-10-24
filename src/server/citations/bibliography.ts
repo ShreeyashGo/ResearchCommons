@@ -32,6 +32,17 @@ interface LineRef {
   line: TextLine;
 }
 
+function median(values: number[]): number | null {
+  const sorted = values
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 === 1
+    ? sorted[mid]!
+    : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
 function isHeading(text: string): boolean {
   return HEADING_RE.test(text.replace(/\s+/g, " ").trim());
 }
@@ -311,6 +322,7 @@ export function parseBibliography(pages: PageText[]): BibEntry[] {
       pageIndex: re.pageIndex,
       yTopPx: re.lines[0].yMid - re.lines[0].hPx,
       yBottomPx: re.lines[re.lines.length - 1].yMid + re.lines[re.lines.length - 1].hPx,
+      medianLineHeightPx: median(re.lines.map((line) => line.hPx)) ?? 10,
     });
   });
   return entries;
@@ -318,23 +330,16 @@ export function parseBibliography(pages: PageText[]): BibEntry[] {
 
 /**
  * Map a cite.* destination (pageIndex + anchor y) to a bibliography entry.
- * Prefers the entry whose [yTopPx, yBottomPx] contains the anchor; otherwise
- * the nearest entry by |y - yMid| (dest anchors land within ~half a line
- * height of the intended entry, including just above its top).
+ * Destinations may sit just above their entry, so allow half a median line
+ * height of tolerance and choose the latest entry start before that point.
  */
 export function entryForDest(entries: BibEntry[], pageIndex: number, yPx: number): BibEntry | null {
   const onPage = entries.filter((e) => e.pageIndex === pageIndex).sort((a, b) => a.yTopPx - b.yTopPx);
   if (onPage.length === 0) return null;
-  const contained = onPage.find((e) => yPx >= e.yTopPx && yPx <= e.yBottomPx);
-  if (contained) return contained;
-  let best: BibEntry = onPage[0];
-  let bestDist = Infinity;
-  for (const e of onPage) {
-    const dist = Math.abs(yPx - (e.yTopPx + e.yBottomPx) / 2);
-    if (dist < bestDist) {
-      best = e;
-      bestDist = dist;
-    }
-  }
-  return best;
+  const tolerance = (median(onPage.map((entry) => entry.medianLineHeightPx)) ?? 10) / 2;
+  const candidates = onPage.filter((entry) => entry.yTopPx <= yPx + tolerance);
+  if (candidates.length === 0) return onPage[0]!;
+  return candidates.reduce((best, entry) =>
+    entry.yTopPx > best.yTopPx ? entry : best,
+  );
 }
