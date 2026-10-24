@@ -28,6 +28,8 @@ Built in one day at the **Devin Hackathon** at **HackerHouse, Georgia Tech**.
 - Careful paper reading and literature review are fading skills.
 - As agents do more of the building, thinking has to stay human.
 
+**Who it's for:** budding researchers, undergrads and new PhD students who want to learn how experienced PhDs, postdocs and professors actually read a paper: what they highlight, what they question, which citations they chase and where they disagree. Research Commons makes that expert reading visible on the page, so the know-how gets passed on instead of staying in someone's head.
+
 ## Features
 
 | Feature | What | Why it matters |
