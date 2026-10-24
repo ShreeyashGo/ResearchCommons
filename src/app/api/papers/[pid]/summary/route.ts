@@ -1,5 +1,6 @@
 import { PaperSummaryRequest, PaperSummaryResponse } from "@/contracts/ai";
-import { notFound } from "@/server/http/errors";
+import { AiOutputError } from "@/server/ai/explain";
+import { notFound, upstreamFailed } from "@/server/http/errors";
 import { json, parseJson, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
 import { summarizePaper } from "@/server/ai/summarize";
 import { requireGroupPaperAccess } from "@/server/citations/http";
@@ -17,7 +18,15 @@ export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
   const { supabase } = await requireUser();
   await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
 
-  const result = await summarizePaper(pid);
+  let result;
+  try {
+    result = await summarizePaper(pid);
+  } catch (err) {
+    if (err instanceof AiOutputError) {
+      throw upstreamFailed("the AI output failed validation");
+    }
+    throw err;
+  }
   if (!result) throw notFound("paper not found");
 
   return json(PaperSummaryResponse.parse({ summary: result.summary, meta: result.meta }));

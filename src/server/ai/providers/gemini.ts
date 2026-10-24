@@ -19,6 +19,7 @@ export function geminiProvider(apiKey: string, model: string): LLMProvider {
     )}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method: "POST",
+      signal: AbortSignal.timeout(60_000),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: args.system }] },

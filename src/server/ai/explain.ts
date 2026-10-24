@@ -157,16 +157,23 @@ export async function explainCitation(
   });
 
   const admin = createAdminClient();
-  const hit = await getCached<CitationExplanation>(admin, cacheKey, provider);
+  const hit = await getCached<CitationExplanation>(admin, cacheKey, provider, CitationExplanation);
   if (hit) return { explanation: hit.output, meta: hit.meta };
 
-  const generated = await provider.generateJson<CitationExplanation>({
-    system: EXPLAIN_SYSTEM,
-    prompt: buildExplainPrompt(input),
-    schema: CitationExplanation,
-    task: "citation_explanation",
-    temperature: 0.2,
-  });
+  let generated: CitationExplanation;
+  try {
+    generated = await provider.generateJson<CitationExplanation>({
+      system: EXPLAIN_SYSTEM,
+      prompt: buildExplainPrompt(input),
+      schema: CitationExplanation,
+      task: "citation_explanation",
+      temperature: 0.2,
+    });
+  } catch (err) {
+    throw new AiOutputError(
+      `provider failed to produce a valid explanation: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const withGrounding: CitationExplanation = { ...generated, grounding };
   const explanation = filterEvidence(input, withGrounding);
 

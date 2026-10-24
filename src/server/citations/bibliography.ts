@@ -195,6 +195,43 @@ function isEntryStart(l: LineRef, marginX: number, numbered: boolean): boolean {
 }
 
 /**
+ * Partition collected bibliography lines into column groups (page order, then
+ * column order). A page is treated as two-column when the sorted line xMins
+ * contain a gutter gap > 15% of the page width; entry splitting then runs per
+ * column so hanging indents and reading order stay correct.
+ */
+function splitColumns(lines: LineRef[], pageWidth: (pageIndex: number) => number): LineRef[][] {
+  const byPage = new Map<number, LineRef[]>();
+  for (const l of lines) {
+    const arr = byPage.get(l.pageIndex) ?? [];
+    arr.push(l);
+    byPage.set(l.pageIndex, arr);
+  }
+  const groups: LineRef[][] = [];
+  for (const pageIndex of [...byPage.keys()].sort((a, b) => a - b)) {
+    const pageLines = byPage.get(pageIndex) ?? [];
+    const width = pageWidth(pageIndex);
+    const xs = [...new Set(pageLines.map((l) => l.line.xMin))].sort((a, b) => a - b);
+    let gutter = -1;
+    for (let i = 1; i < xs.length; i++) {
+      if (xs[i] - xs[i - 1] > width * 0.15) gutter = (xs[i] + xs[i - 1]) / 2;
+    }
+    if (gutter < 0) {
+      groups.push(pageLines);
+    } else {
+      const left = pageLines.filter((l) => l.line.xMin < gutter);
+      const right = pageLines.filter((l) => l.line.xMin >= gutter);
+      if (left.length >= 2 && right.length >= 2) {
+        groups.push(left, right);
+      } else {
+        groups.push(pageLines);
+      }
+    }
+  }
+  return groups;
+}
+
+/**
  * Locate the References/Bibliography section and parse its entries.
  * Handles numbered ("[1]", "1.") and author-year (hanging-indent) styles.
  */
@@ -206,19 +243,22 @@ export function parseBibliography(pages: PageText[]): BibEntry[] {
   const numberedStarts = lines.filter((l) => NUMBERED_START_RE.test(l.line.text) || NUMBERED_DOT_RE.test(l.line.text));
   const numbered = numberedStarts.length >= 3;
 
-  // left margin = minimum xMin over the bib lines
-  const marginX = Math.min(...lines.map((l) => l.line.xMin));
+  const pageWidth = (i: number) => pages[i]?.widthPx || 612;
 
   const rawEntries: RawEntry[] = [];
-  let cur: RawEntry | null = null;
-  for (const l of lines) {
-    if (isEntryStart(l, marginX, numbered)) {
-      const m = NUMBERED_START_RE.exec(l.line.text) ?? NUMBERED_DOT_RE.exec(l.line.text);
-      cur = { numberLabel: m ? Number(m[1]) : null, pageIndex: l.pageIndex, lines: [] };
-      rawEntries.push(cur);
+  for (const group of splitColumns(lines, pageWidth)) {
+    // left margin = minimum xMin over this column's bib lines
+    const marginX = Math.min(...group.map((l) => l.line.xMin));
+    let cur: RawEntry | null = null;
+    for (const l of group) {
+      if (isEntryStart(l, marginX, numbered)) {
+        const m = NUMBERED_START_RE.exec(l.line.text) ?? NUMBERED_DOT_RE.exec(l.line.text);
+        cur = { numberLabel: m ? Number(m[1]) : null, pageIndex: l.pageIndex, lines: [] };
+        rawEntries.push(cur);
+      }
+      if (!cur) continue; // preamble line between heading and first entry
+      cur.lines.push(l.line);
     }
-    if (!cur) continue; // preamble line between heading and first entry
-    cur.lines.push(l.line);
   }
 
   const entries: BibEntry[] = [];
@@ -250,16 +290,24 @@ export function parseBibliography(pages: PageText[]): BibEntry[] {
 }
 
 /**
- * Map a cite.* destination (pageIndex + anchor y) to a bibliography entry ordinal.
- * The destination lands at the start of the entry that defines it.
+ * Map a cite.* destination (pageIndex + anchor y) to a bibliography entry.
+ * Prefers the entry whose [yTopPx, yBottomPx] contains the anchor; otherwise
+ * the nearest entry by |y - yMid| (dest anchors land within ~half a line
+ * height of the intended entry, including just above its top).
  */
 export function entryForDest(entries: BibEntry[], pageIndex: number, yPx: number): BibEntry | null {
   const onPage = entries.filter((e) => e.pageIndex === pageIndex).sort((a, b) => a.yTopPx - b.yTopPx);
   if (onPage.length === 0) return null;
-  let chosen = onPage[0];
+  const contained = onPage.find((e) => yPx >= e.yTopPx && yPx <= e.yBottomPx);
+  if (contained) return contained;
+  let best: BibEntry = onPage[0];
+  let bestDist = Infinity;
   for (const e of onPage) {
-    if (e.yTopPx - 4 <= yPx) chosen = e;
-    else break;
+    const dist = Math.abs(yPx - (e.yTopPx + e.yBottomPx) / 2);
+    if (dist < bestDist) {
+      best = e;
+      bestDist = dist;
+    }
   }
-  return chosen;
+  return best;
 }

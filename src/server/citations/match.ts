@@ -38,6 +38,11 @@ export interface MatchOutcome {
   work: ExternalWorkInsert | null;
 }
 
+/** Year check used by every match path: unknown years never veto a match. */
+export function yearCompatible(a: number | null | undefined, b: number | null | undefined): boolean {
+  return a == null || b == null || Math.abs(a - b) <= YEAR_TOLERANCE;
+}
+
 /**
  * Pick a match among candidates: requires title similarity >= 0.85 and, when both
  * years are known, |Δyear| <= 1. The match is ambiguous when a second qualifying
@@ -50,9 +55,7 @@ export function pickMatch(entry: Pick<BibEntry, "title" | "year" | "rawText">, c
   const scored = candidates
     .map((c) => ({ c, sim: titleSimilarity(title, c.work.title) }))
     .filter(
-      ({ c, sim }) =>
-        sim >= TITLE_MATCH_THRESHOLD &&
-        (entry.year == null || c.work.year == null || Math.abs(entry.year - c.work.year) <= YEAR_TOLERANCE),
+      ({ c, sim }) => sim >= TITLE_MATCH_THRESHOLD && yearCompatible(entry.year, c.work.year),
     )
     .sort((a, b) => b.sim - a.sim);
 

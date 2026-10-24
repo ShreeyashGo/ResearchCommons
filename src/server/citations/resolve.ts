@@ -1,13 +1,17 @@
 import "server-only";
 
 import { parseServerEnv, serverEnvSchema } from "@/server/env";
-import { arxivIdInText, deriveSearchUrl, pickMatch, type MatchCandidate } from "./match";
+import { arxivIdInText, deriveSearchUrl, pickMatch, titleSimilarity, yearCompatible, type MatchCandidate } from "./match";
 import type { BibEntry, ExternalWorkInsert, ResolvedReference } from "./types";
 
 const S2_FIELDS =
   "title,authors,year,abstract,externalIds,venue,url,openAccessPdf,paperId,isOpenAccess";
 const OA_SELECT =
   "id,display_name,publication_year,doi,authorships,primary_location,open_access,ids";
+/** Cap on external-service request latency (S2 / OpenAlex / arXiv metadata). */
+const EXTERNAL_TIMEOUT_MS = 15_000;
+/** Hard stop on S2 reference pagination (page size is 1000). */
+const S2_MAX_OFFSET = 5000;
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -28,7 +32,10 @@ export async function fetchJsonWithBackoff(
     attempt++;
     let res: Response;
     try {
-      res = await fetchImpl(url, init);
+      res = await fetchImpl(url, {
+        ...init,
+        signal: init.signal ?? AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
+      });
     } catch (err) {
       if (attempt >= maxAttempts) throw err;
       await sleep(delay);
@@ -81,7 +88,7 @@ function s2PaperToWork(p: S2Paper): ExternalWorkInsert | null {
     venue: p.venue ?? null,
     abstract: p.abstract ?? null,
     doi: p.externalIds?.DOI ?? null,
-    arxivId: p.externalIds?.ArXiv ?? null,
+    arxivId: p.externalIds?.ArXiv?.replace(/v\d+$/i, "") ?? null,
     url: p.url ?? null,
     openAccessPdfUrl: p.openAccessPdf?.url ?? null,
   };
@@ -93,14 +100,25 @@ export async function fetchS2References(
 ): Promise<MatchCandidate[]> {
   const headers: Record<string, string> = { accept: "application/json" };
   if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
-  const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${encodeURIComponent(
-    arxivId,
-  )}/references?fields=${S2_FIELDS}&limit=1000`;
-  const json = (await fetchJsonWithBackoff(url, { headers }, opts.fetchImpl)) as S2ReferencesResponse;
-  return (json.data ?? [])
-    .map((d) => (d.citedPaper ? s2PaperToWork(d.citedPaper) : null))
-    .filter((w): w is ExternalWorkInsert => w !== null)
-    .map((work) => ({ work }));
+  // S2 paginates references via offset (page size capped at 1000). We stop
+  // after S2_MAX_OFFSET references — papers citing more than that are
+  // pathological for this MVP and are covered by the OpenAlex title fallback.
+  const works: ExternalWorkInsert[] = [];
+  for (let offset = 0; offset < S2_MAX_OFFSET; offset += 1000) {
+    const url = `https://api.semanticscholar.org/graph/v1/paper/arXiv:${encodeURIComponent(
+      arxivId,
+    )}/references?fields=${S2_FIELDS}&limit=1000&offset=${offset}`;
+    const json = (await fetchJsonWithBackoff(url, { headers }, opts.fetchImpl)) as S2ReferencesResponse;
+    const page = (json.data ?? [])
+      .map((d) => (d.citedPaper ? s2PaperToWork(d.citedPaper) : null))
+      .filter((w): w is ExternalWorkInsert => w !== null);
+    works.push(...page);
+    if ((json.data ?? []).length < 1000) break;
+  }
+  if (works.length >= S2_MAX_OFFSET) {
+    console.warn(`[citations] S2 reference list truncated at ${S2_MAX_OFFSET} for arXiv:${arxivId}`);
+  }
+  return works.map((work) => ({ work }));
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +144,11 @@ export interface OaSearchResponse {
 function oaWorkToWork(w: OaWork): ExternalWorkInsert | null {
   if (!w.id || !w.display_name) return null;
   const arxivUrl = w.ids?.arxiv;
-  const arxivId = arxivUrl ? /([^/]+)$/.exec(arxivUrl.replace(/\.pdf$/, ""))?.[1]?.replace(/^abs\//, "") ?? null : null;
+  const arxivId = arxivUrl
+    ? (/([^/]+)$/.exec(arxivUrl.replace(/\.pdf$/, ""))?.[1]?.replace(/^abs\//, "") ?? null)
+    : null;
+  // OpenAlex arXiv ids may carry a version suffix (1706.06083v6); strip it.
+  const arxivIdBase = arxivId?.replace(/v\d+$/i, "") ?? null;
   return {
     source: "openalex",
     externalId: w.id.replace(/^https?:\/\/openalex\.org\//, ""),
@@ -136,7 +158,7 @@ function oaWorkToWork(w: OaWork): ExternalWorkInsert | null {
     venue: w.primary_location?.source?.display_name ?? null,
     abstract: null, // OpenAlex returns inverted indexes; not fetched for MVP
     doi: w.doi ?? w.ids?.doi ?? null,
-    arxivId,
+    arxivId: arxivIdBase,
     url: w.primary_location?.landing_page_url ?? w.id,
     openAccessPdfUrl: w.open_access?.oa_url ?? null,
   };
@@ -200,16 +222,25 @@ export async function resolveReferences(entries: BibEntry[], opts: ResolveOption
     let method: string | null = null;
     let work: ExternalWorkInsert | null = null;
 
-    // Direct arXiv id inside the entry text beats title matching.
+    // A direct arXiv id inside the entry text is a strong signal but never
+    // resolves on its own: the extracted title must still corroborate it.
     const entryArxiv = arxivIdInText(entry.rawText);
     const direct = entryArxiv
       ? s2Candidates.find((c) => c.work.arxivId === entryArxiv)
       : undefined;
-    if (direct) {
-      status = "resolved";
-      score = 1;
-      method = "s2_arxiv_id";
-      work = direct.work;
+    if (direct && entry.title) {
+      const sim = titleSimilarity(entry.title, direct.work.title);
+      if (sim >= 0.85 && yearCompatible(entry.year, direct.work.year)) {
+        status = "resolved";
+        score = 1;
+        method = "s2_arxiv_id";
+        work = direct.work;
+      } else {
+        // arXiv id says X, title says something else — too risky to link.
+        status = "ambiguous";
+        score = sim;
+        method = "s2_arxiv_id_conflict";
+      }
     } else if (s2Candidates.length > 0) {
       const m = pickMatch(entry, s2Candidates);
       status = m.status;

@@ -49,11 +49,12 @@ export const mockProvider: LLMProvider = {
         ? firstSentences(source, 3)
         : `No abstract or full text is available for "${title}".`;
       const keySource = source?.match(/[^.!?]*(?:we (?:show|propose|prove|present|demonstrate|introduce|study)|this (?:paper|work) (?:shows?|proposes?|presents?|demonstrates?|introduces?))[^.!?]*[.!?]/i)?.[0];
-      return {
+      // Validate the mock output against the same schema as real providers.
+      return args.schema.parse({
         summary: summary.slice(0, 2000),
         keyContribution: (keySource?.trim() || firstSentences(source ?? title, 1)).slice(0, 1000),
         grounding: fullText ? "full_text" : abstract ? "abstract_only" : "metadata_only",
-      } as T;
+      }) as T;
     }
 
     if (args.task === "citation_explanation") {
@@ -82,7 +83,7 @@ export const mockProvider: LLMProvider = {
         evidence.push({ source: "citing_context", quote: title });
       }
 
-      return {
+      return args.schema.parse({
         referencedPaper: { title, authors, year },
         summary: abstract
           ? firstSentences(abstract, 3).slice(0, 2000)
@@ -99,7 +100,7 @@ export const mockProvider: LLMProvider = {
           ? "Mock AI: generated from the cited work's abstract and the citation contexts; full text of the cited work unavailable."
           : "Mock AI: only citation contexts and metadata are available; no abstract.",
         sourceLinks: url ? [{ label: "Semantic Scholar / source page", url }] : [],
-      } as T;
+      }) as T;
     }
 
     throw new Error(`mock provider: unknown task "${args.task}"`);

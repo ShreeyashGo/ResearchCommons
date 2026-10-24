@@ -62,12 +62,22 @@ export function buildExplainPrompt(input: CitationInput): string {
 // real inputs by parsing these tagged sections back out of the prompt.
 // ---------------------------------------------------------------------------
 export function readSection(prompt: string, name: string): string {
-  const m = new RegExp(`===${name}===\\n([\\s\\S]*?)(?=\\n===|$)`).exec(prompt);
+  // The end marker must be a real ===NAME=== header: a line like "====="
+  // inside excerpted PDF text must not truncate the section.
+  const m = new RegExp(`===${name}===\\n([\\s\\S]*?)(?=\\n===[A-Z_]+===|$)`).exec(prompt);
   return m?.[1]?.trim() ?? "";
 }
 
+const FIELD_BOUNDARY =
+  "(?:TITLE|AUTHORS|YEAR|VENUE|ABSTRACT|URL|CITING_PAPER|CITED_WORK|WORK|CONTEXT\\[)";
+
 export function readField(section: string, field: string): string | null {
-  const m = new RegExp(`^${field}: (.*)$`, "m").exec(section);
+  // Values may span multiple lines; they end at the next FIELD: header or the
+  // end of the section rather than at the first newline.
+  const m = new RegExp(
+    `^${field}: ([\\s\\S]*?)(?=\\n${FIELD_BOUNDARY}|\\n===|$)`,
+    "m",
+  ).exec(section);
   const v = m?.[1]?.trim();
   return v && v !== "N/A" ? v : null;
 }

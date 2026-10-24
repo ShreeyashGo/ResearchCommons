@@ -5,8 +5,11 @@ import type { NormalizedRect } from "@/contracts/annotations";
 
 const CITE_DEST_RE = /^cite[.\-_]/i;
 const NUMERIC_RE = /\[\s*\d{1,3}(?:\s*[,;]\s*\d{1,3}|\s*[-–—]\s*\d{1,3})*\s*\]/g;
-const AUTHOR_YEAR_PAREN =
-  /\(([A-Z][A-Za-zÀ-ÿ'’\-]+(?:(?:\s+et\s+al\.?)|(?:\s+(?:and|&)\s+[A-Z][A-Za-zÀ-ÿ'’\-]+))?)[,\s]+((?:19|20)\d{2})[a-z]?\)/g;
+// Paren groups that contain at least one 4-digit year; multi-cite groups like
+// "(A et al., 2018; B and C, 2015)" are split into segments inside the group.
+const AUTHOR_YEAR_GROUP = /\(([^()]*(?:19|20)\d{2}[a-z]?[^()]*)\)/g;
+const AUTHOR_YEAR_SEGMENT =
+  /([A-Z][A-Za-zÀ-ÿ'’\-]+(?:(?:\s+et\s+al\.?)|(?:\s+(?:and|&)\s+[A-Z][A-Za-zÀ-ÿ'’\-]+))?)[,\s]+((?:19|20)\d{2})[a-z]?/g;
 const AUTHOR_YEAR_INLINE =
   /([A-Z][A-Za-zÀ-ÿ'’\-]+(?:\s+et\s+al\.?|(?:\s+(?:and|&)\s+[A-Z][A-Za-zÀ-ÿ'’\-]+))?)\s*\(((?:19|20)\d{2})[a-z]?\)/g;
 const MAX_RANGE_SPAN = 25;
@@ -102,18 +105,24 @@ function findEntriesByAuthorYear(entries: BibEntry[], surname: string, year: num
   });
 }
 
-/** Expand "[1,2-4]" style inner text into reference numbers. */
-function expandNumeric(inner: string): number[] {
+/**
+ * Expand "[1,2-4]" style inner text into reference numbers. Returns null when
+ * any part fails to parse as a usable reference number (e.g. "0" in an index
+ * pair like [0,1], or a range wider than a plausible citation list).
+ */
+function expandNumeric(inner: string): number[] | null {
   const out: number[] = [];
   for (const part of inner.split(/[,;]/)) {
     const range = part.trim().match(/^(\d{1,3})\s*[-–—]\s*(\d{1,3})$/);
     if (range) {
       const a = Number(range[1]);
       const b = Number(range[2]);
-      if (b - a <= MAX_RANGE_SPAN) for (let n = a; n <= b; n++) out.push(n);
+      if (a < 1 || b - a > MAX_RANGE_SPAN) return null;
+      for (let n = a; n <= b; n++) out.push(n);
     } else {
       const n = Number(part.trim());
-      if (Number.isInteger(n) && n >= 1) out.push(n);
+      if (!Number.isInteger(n) || n < 1) return null;
+      out.push(n);
     }
   }
   return out;
@@ -152,11 +161,18 @@ function regexMarkers(extracted: ExtractedPaper, entries: BibEntry[]): CitationM
     const text = page.text;
 
     if (numberedStyle) {
+      const knownLabels = new Set(
+        entries.map((e) => e.numberLabel).filter((n): n is number => n !== null),
+      );
       NUMERIC_RE.lastIndex = 0;
       for (const m of text.matchAll(NUMERIC_RE)) {
         const start = m.index;
         const end = start + m[0].length;
         const nums = expandNumeric(m[0].slice(1, -1));
+        // Accept a bracket only when every expanded number maps to an existing
+        // bibliography label; otherwise drop the whole bracket (it is likely an
+        // index pair like [0,1] or a byte range like [0,255]).
+        if (nums === null || nums.length === 0 || !nums.every((n) => knownLabels.has(n))) continue;
         for (const n of nums) {
           const entry = findEntryByNumber(entries, n);
           if (!entry) continue;
@@ -166,18 +182,40 @@ function regexMarkers(extracted: ExtractedPaper, entries: BibEntry[]): CitationM
         }
       }
     } else {
-      for (const re of [AUTHOR_YEAR_PAREN, AUTHOR_YEAR_INLINE]) {
-        re.lastIndex = 0;
-        for (const m of text.matchAll(re)) {
-          const surname = surnameOf(m[1]);
-          const year = Number(m[2].slice(0, 4));
+      const linkSkip = (page: PageText, start: number, end: number) => {
+        const rects = rectsForRange(page, start, end);
+        return rectCenterInLinks(page, rects) ? null : rects;
+      };
+      // Inline "Smith et al. (2020)" markers.
+      AUTHOR_YEAR_INLINE.lastIndex = 0;
+      for (const m of text.matchAll(AUTHOR_YEAR_INLINE)) {
+        const surname = surnameOf(m[1]);
+        const year = Number(m[2].slice(0, 4));
+        const matches = findEntriesByAuthorYear(entries, surname, year);
+        if (matches.length !== 1) continue; // 0 = unknown work; >1 = ambiguous marker, skip
+        const rects = linkSkip(page, m.index, m.index + m[0].length);
+        if (!rects) continue;
+        out.push({ pageIndex: page.pageIndex, refOrdinal: matches[0].ordinal, markerText: m[0], rects, method: "regex" });
+      }
+      // Paren groups "(A et al., 2018; B and C, 2015)": each author-year
+      // segment resolves independently; one marker per resolved reference.
+      AUTHOR_YEAR_GROUP.lastIndex = 0;
+      for (const gm of text.matchAll(AUTHOR_YEAR_GROUP)) {
+        const inner = gm[1];
+        const groupOrdinals = new Set<number>();
+        AUTHOR_YEAR_SEGMENT.lastIndex = 0;
+        for (const sm of inner.matchAll(AUTHOR_YEAR_SEGMENT)) {
+          const surname = surnameOf(sm[1]);
+          const year = Number(sm[2].slice(0, 4));
           const matches = findEntriesByAuthorYear(entries, surname, year);
-          if (matches.length !== 1) continue; // 0 = unknown work; >1 = ambiguous marker, skip
-          const start = m.index;
-          const end = start + m[0].length;
-          const rects = rectsForRange(page, start, end);
-          if (rectCenterInLinks(page, rects)) continue;
-          out.push({ pageIndex: page.pageIndex, refOrdinal: matches[0].ordinal, markerText: m[0], rects, method: "regex" });
+          if (matches.length !== 1) continue;
+          groupOrdinals.add(matches[0].ordinal);
+        }
+        if (groupOrdinals.size === 0) continue;
+        const rects = linkSkip(page, gm.index, gm.index + gm[0].length);
+        if (!rects) continue;
+        for (const ord of groupOrdinals) {
+          out.push({ pageIndex: page.pageIndex, refOrdinal: ord, markerText: gm[0], rects, method: "regex" });
         }
       }
     }

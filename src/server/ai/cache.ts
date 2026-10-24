@@ -64,6 +64,7 @@ export async function getCached<T>(
   admin: AdminClient,
   cacheKey: string,
   provider: LLMProvider,
+  schema: { safeParse(input: unknown): { success: boolean; data?: unknown } },
 ): Promise<{ output: T; meta: AiMeta } | null> {
   const { data, error } = await admin
     .from("ai_summaries")
@@ -75,8 +76,12 @@ export async function getCached<T>(
   // Mock rows are never served to a real provider (provider/model are in the key
   // anyway; this is defense-in-depth).
   if (row.is_mock !== provider.isMock) return null;
+  // Cached output that no longer satisfies the schema (e.g. after a schema
+  // bump) is treated as a miss and regenerated.
+  const parsed = schema.safeParse(row.output);
+  if (!parsed.success) return null;
   return {
-    output: row.output as T,
+    output: parsed.data as T,
     meta: {
       provider: row.provider,
       model: row.model,

@@ -3,6 +3,7 @@ import "server-only";
 import { WorkSummary, type AiMeta, type Grounding, type WorkInput } from "@/contracts/ai";
 import { extractPdf } from "@/server/citations/extract";
 import { createAdminClient } from "@/server/supabase/admin";
+import { AiOutputError } from "./explain";
 import { buildCacheKey, getCached, hashInputs, storeCached } from "./cache";
 import { PROMPT_VERSION, SUMMARY_SYSTEM, buildSummaryPrompt } from "./prompts";
 import { getProvider } from "./providers";
@@ -99,16 +100,23 @@ export async function summarizeWork(
   });
 
   const admin = createAdminClient();
-  const hit = await getCached<WorkSummary>(admin, cacheKey, provider);
+  const hit = await getCached<WorkSummary>(admin, cacheKey, provider, WorkSummary);
   if (hit) return { summary: hit.output, meta: hit.meta };
 
-  const generated = await provider.generateJson<WorkSummary>({
-    system: SUMMARY_SYSTEM,
-    prompt: buildSummaryPrompt(work),
-    schema: WorkSummary,
-    task: "paper_summary",
-    temperature: 0.2,
-  });
+  let generated: WorkSummary;
+  try {
+    generated = await provider.generateJson<WorkSummary>({
+      system: SUMMARY_SYSTEM,
+      prompt: buildSummaryPrompt(work),
+      schema: WorkSummary,
+      task: "paper_summary",
+      temperature: 0.2,
+    });
+  } catch (err) {
+    throw new AiOutputError(
+      `provider failed to produce a valid summary: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   // Grounding is computed from what we actually supplied, never trusted to the model.
   const summary: WorkSummary = { ...generated, grounding };
 

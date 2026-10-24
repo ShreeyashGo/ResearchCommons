@@ -13,6 +13,7 @@ export function ollamaProvider(baseUrl: string, model: string): LLMProvider {
   async function call(args: LLMGenerateJsonArgs<unknown>, retry: boolean): Promise<unknown> {
     const res = await fetch(`${base}/api/chat`, {
       method: "POST",
+      signal: AbortSignal.timeout(60_000),
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         model,

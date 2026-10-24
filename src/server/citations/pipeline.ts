@@ -10,6 +10,8 @@ import { resolveReferences, type FetchLike } from "./resolve";
 import type { AnalysisStats, BibEntry, CitationContextInsert, PaperAnalysis } from "./types";
 
 const PAPERS_BUCKET = "papers";
+/** A 'processing' claim older than this is treated as crashed and reclaimable. */
+const STALE_PROCESSING_MS = 10 * 60 * 1000;
 
 /**
  * DB-free core: PDF bytes -> references + contexts. Exposed for tests and reuse
@@ -41,15 +43,21 @@ export async function analyzePaper(
 /**
  * Atomically claim a processing run: transitions processing_status to
  * 'processing' only when it isn't already. Returns false when a run is in
- * flight (callers map that to 409). Uses the service-role client.
+ * flight (callers map that to 409). A row stuck in 'processing' for longer
+ * than STALE_PROCESSING_MS is assumed crashed and may be re-claimed. Uses the
+ * service-role client.
  */
 export async function claimPaperProcessing(paperId: string): Promise<boolean> {
   const admin = createAdminClient();
+  const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS).toISOString();
   const { data: claimed, error } = await admin
     .from("papers")
     .update({ processing_status: "processing", processing_error: null })
     .eq("id", paperId)
-    .neq("processing_status", "processing")
+    .or(
+      `processing_status.neq.processing,` +
+        `and(processing_status.eq.processing,updated_at.lt.${staleBefore})`,
+    )
     .select("id");
   if (error) throw new Error(`status update failed: ${error.message}`);
   return (claimed?.length ?? 0) > 0;
@@ -81,12 +89,6 @@ export async function startPaperProcessing(paperId: string): Promise<void> {
     throw new Error(message);
   };
 
-  const { error: claimErr } = await admin
-    .from("papers")
-    .update({ processing_status: "processing", processing_error: null })
-    .eq("id", paperId);
-  if (claimErr) return fail(`status update failed: ${claimErr.message}`);
-
   const storagePath: string = paper.storage_path ?? `${PAPERS_BUCKET}/${paperId}.pdf`;
   const { data: blob, error: dlErr } = await admin.storage.from(PAPERS_BUCKET).download(storagePath);
   if (dlErr || !blob) return fail(`pdf download failed: ${dlErr?.message ?? "empty object"}`);
@@ -100,12 +102,6 @@ export async function startPaperProcessing(paperId: string): Promise<void> {
   }
 
   try {
-    // Idempotent rewrite: wipe previous references/contexts first.
-    const { error: delCtxErr } = await admin.from("citation_contexts").delete().eq("paper_id", paperId);
-    if (delCtxErr) throw new Error(delCtxErr.message);
-    const { error: delRefErr } = await admin.from("paper_references").delete().eq("paper_id", paperId);
-    if (delRefErr) throw new Error(delRefErr.message);
-
     // Upsert distinct external works; keep (source, external_id) -> id.
     const workIds = new Map<string, string>();
     const works = analysis.references
@@ -137,43 +133,35 @@ export async function startPaperProcessing(paperId: string): Promise<void> {
       for (const row of upserted ?? []) workIds.set(`${row.source}|${row.external_id}`, row.id);
     }
 
-    const { data: refRows, error: refErr } = await admin
-      .from("paper_references")
-      .insert(
-        analysis.references.map((r) => ({
-          paper_id: paperId,
-          ordinal: r.ordinal,
-          label: r.label,
-          raw_text: r.rawText.slice(0, 4000),
-          parsed_title: r.title,
-          parsed_authors: r.authors,
-          parsed_year: r.year,
-          external_work_id: r.work ? (workIds.get(`${r.work.source}|${r.work.externalId}`) ?? null) : null,
-          match_status: r.matchStatus,
-          match_score: r.matchScore,
-          match_method: r.matchMethod,
-        })),
-      )
-      .select("id,ordinal");
-    if (refErr) throw new Error(refErr.message);
-    const refIdByOrdinal = new Map<number, string>((refRows ?? []).map((r) => [r.ordinal, r.id]));
-
-    const contextRows = analysis.contexts
-      .map((c: CitationContextInsert) => ({
-        paper_id: paperId,
-        reference_id: refIdByOrdinal.get(c.refOrdinal),
-        page_index: c.pageIndex,
-        marker_text: c.markerText.slice(0, 200),
-        sentence: c.sentence,
-        paragraph: c.paragraph,
-        rects: c.rects,
-        detection_method: c.detectionMethod,
-      }))
-      .filter((r) => r.reference_id);
-    if (contextRows.length > 0) {
-      const { error: ctxErr } = await admin.from("citation_contexts").insert(contextRows);
-      if (ctxErr) throw new Error(ctxErr.message);
-    }
+    // Atomic rewrite via security-definer RPC: delete + insert refs/contexts
+    // in one transaction so a failure can't leave wiped or partial citations.
+    const refsJson = analysis.references.map((r) => ({
+      ordinal: r.ordinal,
+      label: r.label,
+      raw_text: r.rawText.slice(0, 4000),
+      parsed_title: r.title,
+      parsed_authors: r.authors,
+      parsed_year: r.year,
+      external_work_id: r.work ? (workIds.get(`${r.work.source}|${r.work.externalId}`) ?? null) : null,
+      match_status: r.matchStatus,
+      match_score: r.matchScore,
+      match_method: r.matchMethod,
+    }));
+    const contextsJson = analysis.contexts.map((c: CitationContextInsert) => ({
+      ref_ordinal: c.refOrdinal,
+      page_index: c.pageIndex,
+      marker_text: c.markerText.slice(0, 200),
+      sentence: c.sentence,
+      paragraph: c.paragraph,
+      rects: c.rects,
+      detection_method: c.detectionMethod,
+    }));
+    const { error: rpcErr } = await admin.rpc("replace_paper_citations", {
+      p_paper_id: paperId,
+      p_refs: refsJson,
+      p_contexts: contextsJson,
+    });
+    if (rpcErr) throw new Error(rpcErr.message);
 
     const { error: doneErr } = await admin
       .from("papers")
