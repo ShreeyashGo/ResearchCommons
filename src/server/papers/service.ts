@@ -591,14 +591,37 @@ export async function uploadPaper(
           .from("papers")
           .select("*")
           .eq("pdf_sha256", sha256)
-          .single();
-        if (racedError || !raced) {
+          .maybeSingle();
+        if (racedError) {
           throw internal(
-            `Could not upload paper: ${racedError?.message ?? insertError.message}`,
+            `Could not upload paper: ${racedError.message}`,
           );
         }
-        paper = raced as PaperRow;
-        deduplicated = true;
+        if (raced) {
+          paper = raced as PaperRow;
+          deduplicated = true;
+        } else if (arxivId) {
+          const { data: arxivPaper, error: arxivLookupError } = await admin
+            .from("papers")
+            .select("*")
+            .eq("arxiv_id", arxivId)
+            .maybeSingle();
+          if (arxivLookupError) {
+            throw internal(
+              `Could not check arXiv conflict: ${arxivLookupError.message}`,
+            );
+          }
+          if (arxivPaper && arxivPaper.pdf_sha256 !== sha256) {
+            throw conflict("This arXiv paper is already in the library.");
+          }
+          if (!arxivPaper) {
+            throw internal(`Could not upload paper: ${insertError.message}`);
+          }
+          paper = arxivPaper as PaperRow;
+          deduplicated = true;
+        } else {
+          throw internal(`Could not upload paper: ${insertError.message}`);
+        }
       } else {
         throw internal(`Could not upload paper: ${insertError.message}`);
       }

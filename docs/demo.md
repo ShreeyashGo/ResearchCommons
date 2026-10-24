@@ -26,6 +26,10 @@ The seeded group is **Koala Lab**. Sign in with either account:
 | Alice Koala | `alice@koalalab.dev` | `koala-demo-123` | Group owner |
 | Bob Koala | `bob@koalalab.dev` | `koala-demo-123` | Group member |
 
+Rerunning the seed resets both demo users' passwords to `koala-demo-123`.
+Citation processing is skipped when the paper is ready and has references; use
+`pnpm seed:demo -- --reprocess` to force it to run again.
+
 Open Koala Lab, select **Attention Is All You Need**, and inspect the
 highlighted passages, comment thread, citations, and Alice's structured
 review. Sign in as Bob in a separate browser session to see his private

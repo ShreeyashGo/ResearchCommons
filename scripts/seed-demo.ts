@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { loadEnvFile } from "node:process";
@@ -16,8 +17,8 @@ import {
 import { extractPdf } from "@/server/citations/extract";
 import { startPaperProcessing } from "@/server/citations/pipeline";
 import { createGroup, joinGroup, listGroups } from "@/server/groups/service";
-import { listLibrary, uploadPaper } from "@/server/papers/service";
-import { upsertMyReview } from "@/server/reviews/service";
+import { uploadPaper } from "@/server/papers/service";
+import { listReviews, upsertMyReview } from "@/server/reviews/service";
 
 const ARXIV_ID = "1706.03762";
 const GROUP_NAME = "Koala Lab";
@@ -197,13 +198,32 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 async function ensurePaper(
   alice: DemoIdentity,
+  admin: ReturnType<typeof createAdminClient>,
   groupId: string,
   pdfBytes: Buffer,
 ): Promise<string> {
-  const library = await listLibrary(alice.client, alice.user.id, groupId, {});
-  const existing = library.find((paper) => paper.arxivId === ARXIV_ID);
+  const pdfSha256 = createHash("sha256").update(pdfBytes).digest("hex");
+  const { data: existing, error: paperLookupError } = await admin
+    .from("papers")
+    .select("id")
+    .eq("pdf_sha256", pdfSha256)
+    .maybeSingle();
+  if (paperLookupError) {
+    throw new Error(`Could not find fixture paper: ${paperLookupError.message}`);
+  }
   if (existing) {
-    return existing.id;
+    const { data: link, error: linkLookupError } = await admin
+      .from("group_papers")
+      .select("paper_id")
+      .eq("group_id", groupId)
+      .eq("paper_id", existing.id)
+      .maybeSingle();
+    if (linkLookupError) {
+      throw new Error(`Could not find fixture paper link: ${linkLookupError.message}`);
+    }
+    if (link) {
+      return existing.id;
+    }
   }
 
   const imported = await uploadPaper(
@@ -233,6 +253,39 @@ async function ensurePaper(
     { arxivId: ARXIV_ID },
   );
   return imported.paperId;
+}
+
+async function processPaperIfNeeded(
+  admin: ReturnType<typeof createAdminClient>,
+  paperId: string,
+): Promise<void> {
+  const { data: paper, error: paperError } = await admin
+    .from("papers")
+    .select("processing_status")
+    .eq("id", paperId)
+    .maybeSingle();
+  if (paperError || !paper) {
+    throw new Error(
+      `Could not inspect paper processing status: ${paperError?.message ?? "paper not found"}`,
+    );
+  }
+  const { count, error: referencesError } = await admin
+    .from("paper_references")
+    .select("id", { count: "exact", head: true })
+    .eq("paper_id", paperId);
+  if (referencesError) {
+    throw new Error(`Could not count paper references: ${referencesError.message}`);
+  }
+
+  if (
+    process.argv.includes("--reprocess") ||
+    paper.processing_status !== "ready" ||
+    count === 0
+  ) {
+    await startPaperProcessing(paperId);
+    return;
+  }
+  console.log("Skipping citation processing: paper is ready and has references.");
 }
 
 function escapeRegExp(value: string): string {
@@ -417,8 +470,8 @@ async function seed(): Promise<void> {
     findAnchor(extracted, phrase),
   );
 
-  const paperId = await ensurePaper(alice, group.id, pdfBytes);
-  await startPaperProcessing(paperId);
+  const paperId = await ensurePaper(alice, admin, group.id, pdfBytes);
+  await processPaperIfNeeded(admin, paperId);
   const shared = await ensureSharedAnnotations(
     alice,
     group.id,
@@ -452,18 +505,21 @@ async function seed(): Promise<void> {
     );
   }
 
-  await upsertMyReview(alice.client, alice.user, group.id, paperId, {
-    tldr: "The Transformer replaces recurrence with attention and enables more parallel training.",
-    contributions: [
-      "A sequence transduction architecture based solely on attention.",
-      "Multi-head attention and positional encodings for sequence order.",
-    ],
-    strengths: ["Clear architecture", "Strong translation results"],
-    weaknesses: ["The original evaluation focuses on two translation tasks"],
-    findings: ["28.4 BLEU on WMT 2014 English-to-German"],
-    openQuestions: ["How does the architecture generalize beyond machine translation?"],
-    relevance: "A foundational reference for our shared attention reading list.",
-  });
+  const reviews = await listReviews(alice.client, alice.user, group.id, paperId);
+  if (!reviews.some((review) => review.author.id === alice.user.id)) {
+    await upsertMyReview(alice.client, alice.user, group.id, paperId, {
+      tldr: "The Transformer replaces recurrence with attention and enables more parallel training.",
+      contributions: [
+        "A sequence transduction architecture based solely on attention.",
+        "Multi-head attention and positional encodings for sequence order.",
+      ],
+      strengths: ["Clear architecture", "Strong translation results"],
+      weaknesses: ["The original evaluation focuses on two translation tasks"],
+      findings: ["28.4 BLEU on WMT 2014 English-to-German"],
+      openQuestions: ["How does the architecture generalize beyond machine translation?"],
+      relevance: "A foundational reference for our shared attention reading list.",
+    });
+  }
 
   console.log(`Seeded ${GROUP_NAME} with ${PAPER_TITLE} (arXiv:${ARXIV_ID}).`);
   console.log("RLS check passed: Alice cannot read Bob's private annotation.");
