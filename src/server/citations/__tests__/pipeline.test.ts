@@ -40,4 +40,21 @@ describe("analyzePaper on fixtures", () => {
       expect(r.searchUrl).toMatch(/^https:\/\/www\.semanticscholar\.org\/search\?q=/);
     }
   }, 120_000);
+
+  it("works on a fourth arXiv fixture (Attention Is All You Need)", async () => {
+    const id = "1706.03762";
+    const res = await analyzePaper(fixturePdf(id), { arxivId: id, fetchImpl: fixtureFetch(id) });
+    console.log("[quality][attention]", JSON.stringify(res.stats));
+    expect(res.pageCount).toBeGreaterThan(5);
+    expect(res.stats.refsFound).toBeGreaterThan(15);
+    expect(res.stats.markersLinked).toBeGreaterThan(10);
+    expect(res.stats.resolved).toBeGreaterThan(5);
+    expect(res.stats.resolved + res.stats.ambiguous + res.stats.unresolved).toBe(
+      res.stats.refsFound,
+    );
+    for (const context of res.contexts) {
+      expect(context.sentence.length).toBeGreaterThan(10);
+      expect(context.rects.length).toBeGreaterThan(0);
+    }
+  }, 120_000);
 });

@@ -17,3 +17,7 @@ pnpm dev
 
 `AI_PROVIDER=mock` is the default, so no AI provider key is needed for local
 development. Stop the local Supabase stack with `pnpm db:stop`.
+
+## Demo
+
+See [docs/demo.md](docs/demo.md) for the Koala Lab demo setup and login.
