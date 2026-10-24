@@ -15,6 +15,17 @@ const VENUE_MARKERS = new RegExp(
     "coRR|available|http|www\\.|doi)",
   "i",
 );
+const TITLE_VENUE_TAIL_PATTERNS = [
+  /\s*\.\s*arXiv(?:\s+preprint)?\b/i,
+  /\s*arXiv:/i,
+  /\s*abs\//i,
+  /\s*\.?\s*CoRR\b/i,
+  /\s*\.\s*In\s+(?:Proceedings\b|[A-Z])/i,
+  /\s*\.\s*Proceedings\s+of\b/i,
+  /\s*\.\s*Advances\s+in\b/i,
+  /\s*\.\s*Journal\b/i,
+  /\.\s*[^.]{2,100},\s*\d+\s*\([^)]*\)\s*:\s*\d+(?:[-–]\d+)?/i,
+];
 
 interface LineRef {
   pageIndex: number;
@@ -122,16 +133,23 @@ export function splitEntrySentences(text: string): string[] {
     if (c !== "." && c !== "!" && c !== "?") continue;
     const prev = text[i - 1] ?? "";
     const next = text[i + 1] ?? "";
+    const afterToken = text.slice(i + 1).match(/^\s*(\S+)/)?.[1] ?? "";
+    const startsVenue = /^(?:arXiv(?:\s+preprint|:)|abs\/)/i.test(afterToken);
     // break only when '.' is followed by whitespace + capital/digit/quote/bracket,
     // and NOT preceded by a single capital letter (initial).
     if (!/\s/.test(next) && next !== "") continue;
     const after = text.slice(i + 1).match(/^\s*(.)/)?.[1] ?? "";
-    if (after && !/[A-Z0-9(\["'“‘]/.test(after)) continue;
+    if (after && !/[A-Z0-9(\["'“‘]/.test(after) && !startsVenue) continue;
     if (/[A-Z]/.test(prev) && /[\s,]/.test(text[i - 2] ?? " ")) {
       // single-capital initial: keep going when the next token is another
-      // initial or a list separator (", and"), else it ends the author segment.
-      const afterToken = text.slice(i + 1).match(/^\s*(\S+)/)?.[1] ?? "";
-      if (/^[A-Z]\./.test(afterToken) || /^(and|&|,)/.test(afterToken)) continue;
+      // initial, list separator, or surname, rather than ending the author list.
+      if (
+        /^[A-Z]\./.test(afterToken) ||
+        /^(and|&|,)/.test(afterToken) ||
+        /^[A-Z][a-zÀ-ÿ'’.-]*[,.]/.test(afterToken)
+      ) {
+        continue;
+      }
     }
     out.push(text.slice(start, i + 1).trim());
     start = i + 1;
@@ -148,6 +166,15 @@ export function extractYear(text: string): number | null {
     if (y <= new Date().getFullYear() + 1) year = y;
   }
   return year;
+}
+
+function stripTitleVenueTail(title: string): string {
+  let end = title.length;
+  for (const pattern of TITLE_VENUE_TAIL_PATTERNS) {
+    const match = pattern.exec(title);
+    if (match?.index !== undefined) end = Math.min(end, match.index);
+  }
+  return title.slice(0, end);
 }
 
 function parseEntryText(raw: string): { title: string | null; authors: string[]; year: number | null } {
@@ -172,10 +199,10 @@ function parseEntryText(raw: string): { title: string | null; authors: string[];
     if (VENUE_MARKERS.test(seg)) break;
     title = title ? `${title} ${seg}` : seg;
   }
-  title = title
+  title = stripTitleVenueTail(title)
     .replace(/^["'“‘]+|["'”’]+$/g, "")
-    .replace(/[.\s]+(1[6-9]\d{2}|20\d{2})[a-z]?[.\s]*$/i, "")
-    .replace(/[.\s]+$/, "")
+    .replace(/[,\s.]+(1[6-9]\d{2}|20\d{2})[a-z]?[,\s.]*$/i, "")
+    .replace(/[.,;:\s]+$/, "")
     .trim();
   if (title.length < 4 || title.length > 500) title = "";
   return { title: title || null, authors, year };

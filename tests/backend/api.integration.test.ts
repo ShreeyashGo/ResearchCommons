@@ -44,9 +44,9 @@ const unusedWebSocketTransport = class {
   }
 };
 
-function makePdf(): Uint8Array<ArrayBuffer> {
+function makePdf(variant = ""): Uint8Array<ArrayBuffer> {
   return new Uint8Array(new TextEncoder().encode(`%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+${variant ? `% ${variant}\n` : ""}1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
 trailer<</Root 1 0 R>>
@@ -222,6 +222,44 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
     await expect(
       uploadPaper(a.client, a.user, group.id, notPdf, { tags: [] }),
     ).rejects.toMatchObject({ code: "validation_failed" });
+  });
+
+  it("returns a conflict when an arXiv id belongs to a different PDF", async () => {
+    const group = await createGroup(a.client, a.id, {
+      name: `arXiv conflict group ${randomUUID()}`,
+      description: "",
+    });
+    groupIds.push(group.id);
+    const suffix = Number.parseInt(
+      randomUUID().replaceAll("-", "").slice(0, 8),
+      16,
+    ) % 100_000;
+    const arxivId = `2301.${String(suffix).padStart(5, "0")}`;
+    const first = await uploadPaper(
+      a.client,
+      a.user,
+      group.id,
+      new File([makePdf()], "arxiv-owner.pdf", { type: "application/pdf" }),
+      { tags: [] },
+      { arxivId },
+    );
+    paperIds.push(first.paperId);
+
+    await expect(
+      uploadPaper(
+        a.client,
+        a.user,
+        group.id,
+        new File([makePdf("different bytes")], "different.pdf", {
+          type: "application/pdf",
+        }),
+        { tags: [] },
+        { arxivId },
+      ),
+    ).rejects.toMatchObject({
+      code: "conflict",
+      message: "This arXiv paper is already in the library.",
+    });
   });
 
   it("serves a signed PDF URL to members only", async () => {

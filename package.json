@@ -15,6 +15,7 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "env:local": "bash scripts/env-local.sh",
+    "seed:demo": "tsx --conditions=react-server scripts/seed-demo.ts",
     "check:secrets": "tsx scripts/check-secrets.ts"
   },
   "dependencies": {

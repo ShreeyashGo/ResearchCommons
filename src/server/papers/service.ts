@@ -310,6 +310,49 @@ async function storePaperPdf(
   return { ...paper, storage_path: storagePath };
 }
 
+async function ensurePaperArxivId(
+  admin: SupabaseClient,
+  paper: PaperRow,
+  arxivId: string | null,
+): Promise<PaperRow> {
+  if (!arxivId || paper.arxiv_id === arxivId) {
+    return paper;
+  }
+  if (paper.arxiv_id) {
+    throw conflict("This PDF is already associated with a different arXiv paper.");
+  }
+
+  const { data, error } = await admin
+    .from("papers")
+    .update({ arxiv_id: arxivId })
+    .eq("id", paper.id)
+    .is("arxiv_id", null)
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    if (error.code === "23505") {
+      throw conflict("This arXiv paper is already in the library.");
+    }
+    throw internal(`Could not associate arXiv id: ${error.message}`);
+  }
+  if (data) {
+    return data as PaperRow;
+  }
+
+  const { data: current, error: lookupError } = await admin
+    .from("papers")
+    .select("*")
+    .eq("id", paper.id)
+    .maybeSingle();
+  if (lookupError || !current) {
+    throw internal(`Paper lookup failed: ${lookupError?.message ?? "no row"}`);
+  }
+  if (current.arxiv_id !== arxivId) {
+    throw conflict("This PDF is already associated with a different arXiv paper.");
+  }
+  return current as PaperRow;
+}
+
 export async function importArxivPaper(
   supabase: SupabaseClient,
   user: User,
@@ -473,15 +516,26 @@ export interface UploadFileLike {
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
+export interface UploadPaperOptions {
+  arxivId?: string;
+}
+
 export async function uploadPaper(
   supabase: SupabaseClient,
   user: User,
   groupId: string,
   file: UploadFileLike,
   metadata: z.input<typeof UploadPaperMetadata>,
+  options: UploadPaperOptions = {},
 ): Promise<ImportResult> {
   await requireGroupMember(supabase, groupId, user.id);
   const meta = UploadPaperMetadata.parse(metadata);
+  const arxivId = options.arxivId
+    ? normalizeArxivId(options.arxivId)
+    : null;
+  if (options.arxivId && !arxivId) {
+    throw validationFailed("Not a valid arXiv id.");
+  }
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.length === 0) {
     throw validationFailed("Uploaded file is empty.");
@@ -524,6 +578,7 @@ export async function uploadPaper(
         authors: meta.authors ?? [],
         year: meta.year ?? null,
         doi: meta.doi ?? null,
+        arxiv_id: arxivId,
         pdf_sha256: sha256,
         page_count: info.pageCount ?? null,
         created_by: user.id,
@@ -536,14 +591,37 @@ export async function uploadPaper(
           .from("papers")
           .select("*")
           .eq("pdf_sha256", sha256)
-          .single();
-        if (racedError || !raced) {
+          .maybeSingle();
+        if (racedError) {
           throw internal(
-            `Could not upload paper: ${racedError?.message ?? insertError.message}`,
+            `Could not upload paper: ${racedError.message}`,
           );
         }
-        paper = raced as PaperRow;
-        deduplicated = true;
+        if (raced) {
+          paper = raced as PaperRow;
+          deduplicated = true;
+        } else if (arxivId) {
+          const { data: arxivPaper, error: arxivLookupError } = await admin
+            .from("papers")
+            .select("*")
+            .eq("arxiv_id", arxivId)
+            .maybeSingle();
+          if (arxivLookupError) {
+            throw internal(
+              `Could not check arXiv conflict: ${arxivLookupError.message}`,
+            );
+          }
+          if (arxivPaper && arxivPaper.pdf_sha256 !== sha256) {
+            throw conflict("This arXiv paper is already in the library.");
+          }
+          if (!arxivPaper) {
+            throw internal(`Could not upload paper: ${insertError.message}`);
+          }
+          paper = arxivPaper as PaperRow;
+          deduplicated = true;
+        } else {
+          throw internal(`Could not upload paper: ${insertError.message}`);
+        }
       } else {
         throw internal(`Could not upload paper: ${insertError.message}`);
       }
@@ -558,6 +636,7 @@ export async function uploadPaper(
       }
     }
   }
+  paper = await ensurePaperArxivId(admin, paper, arxivId);
   if (deduplicated && !paper.storage_path) {
     // Repair a deduped paper whose PDF is missing now that we have the bytes.
     paper = await storePaperPdf(admin, paper, bytes);
