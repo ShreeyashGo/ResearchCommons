@@ -5,10 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BookOpen,
   ChevronsLeft,
-  Moon,
   PanelLeft,
   Plus,
-  Sun,
   Users,
 } from "lucide-react";
 import type { Group, LibraryPaper } from "@/contracts";
@@ -20,30 +18,8 @@ import { Button } from "@/components/ui/controls";
 import { GroupMenu } from "./group-menu";
 import { LibraryRail } from "./library-rail";
 import { ImportBar } from "./import-bar";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { authorColor } from "@/lib/client/utils";
-
-function ThemeToggle() {
-  const [dark, setDark] = useState<boolean | null>(null);
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains("dark"));
-  }, []);
-  return (
-    <button
-      aria-label="Toggle theme"
-      className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-ink"
-      onClick={() => {
-        const next = !dark;
-        setDark(next);
-        document.documentElement.classList.toggle("dark", next);
-        try {
-          localStorage.setItem("rc-theme", next ? "dark" : "light");
-        } catch {}
-      }}
-    >
-      {dark ? <Sun size={15} /> : <Moon size={15} />}
-    </button>
-  );
-}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();

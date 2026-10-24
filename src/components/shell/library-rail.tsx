@@ -5,15 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BookOpen, FileText, Search, Tag, X } from "lucide-react";
 import type { LibraryPaper } from "@/contracts";
-import { cn, authorList } from "@/lib/client/utils";
+import { cn, authorList, PAPER_STATUS } from "@/lib/client/utils";
 import { Badge, EmptyState, Skeleton } from "@/components/ui/atoms";
 
-const STATUS_LABEL: Record<string, { label: string; tone: "ok" | "warn" | "neutral" | "danger" }> = {
-  ready: { label: "ready", tone: "ok" },
-  pending: { label: "queued", tone: "neutral" },
-  processing: { label: "processing", tone: "warn" },
-  failed: { label: "failed", tone: "danger" },
-};
+const STATUS_LABEL = PAPER_STATUS;
 
 export function LibraryRail({
   groupId,

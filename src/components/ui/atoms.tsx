@@ -30,9 +30,17 @@ export function Badge({
   );
 }
 
-export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+export function Card({
+  children,
+  className,
+  style,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
-    <div className={cn("rounded-xl border border-line bg-surface shadow-card", className)}>
+    <div className={cn("rounded-xl border border-line bg-surface shadow-card", className)} style={style}>
       {children}
     </div>
   );

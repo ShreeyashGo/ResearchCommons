@@ -170,6 +170,7 @@ body {
 
 /* ---- reader overlays ---- */
 
+/* The PDF page stays white in both themes, so multiply is correct on both. */
 .ann-highlight {
   position: absolute;
   border-radius: 2px;
@@ -178,10 +179,6 @@ body {
   transition: filter 120ms ease, outline-color 120ms ease;
   outline: 1.5px solid transparent;
   outline-offset: 0px;
-}
-
-.dark .ann-highlight {
-  mix-blend-mode: screen;
 }
 
 .ann-highlight:hover {
@@ -211,7 +208,8 @@ body {
   font-family: var(--font-sans);
   color: #fff;
   cursor: pointer;
-  border: 1.5px solid var(--surface);
+  /* Page is white in both themes; keep the ring white so the dot stays crisp. */
+  border: 1.5px solid #fff;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.28);
   transition: transform 120ms ease;
   z-index: 20;
@@ -282,6 +280,20 @@ body {
 
 .anim-fade-slide {
   animation: fade-slide-in 160ms ease-out;
+}
+
+/* Baseline accessible focus ring for interactive elements that don't set one. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-slide,
+  .skeleton,
+  .ann-badge.pulse {
+    animation: none;
+  }
 }
 
 @keyframes shimmer {
