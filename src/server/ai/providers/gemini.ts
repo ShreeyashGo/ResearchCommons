@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { LLMGenerateJsonArgs, LLMProvider } from "@/contracts/ai";
+import { fetchWithBackoff } from "@/server/http/fetch-backoff";
+import { JSON_RETRY_NUDGE, LLM_BACKOFF, parseModelJson, throwHttpError, withJsonRetry, type ProviderDeps } from "./shared";
 
 interface GeminiResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -12,45 +14,35 @@ function extractText(json: GeminiResponse): string {
 }
 
 /** Gemini REST provider (free tier). Only used when AI_PROVIDER=gemini. */
-export function geminiProvider(apiKey: string, model: string): LLMProvider {
-  async function call(args: LLMGenerateJsonArgs<unknown>, retry: boolean): Promise<unknown> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      model,
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      signal: AbortSignal.timeout(60_000),
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: args.system }] },
-        contents: [{ role: "user", parts: [{ text: args.prompt + (retry ? "\n\nRETRY: respond with a single valid JSON object only." : "") }] }],
-        generationConfig: {
-          temperature: args.temperature ?? 0.2,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Gemini generateContent failed: HTTP ${res.status} ${body.slice(0, 300)}`);
-    }
-    const text = extractText((await res.json()) as GeminiResponse);
-    if (!text) throw new Error("Gemini returned empty content");
-    const parsed: unknown = JSON.parse(text);
-    return args.schema.parse(parsed);
+export function geminiProvider(apiKey: string, model: string, deps: ProviderDeps = {}): LLMProvider {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+
+  async function call<T>(args: LLMGenerateJsonArgs<T>, nudge: boolean): Promise<T> {
+    const res = await fetchWithBackoff(
+      url,
+      {
+        method: "POST",
+        // Header, not ?key=, so the key never shows up in URL/access logs.
+        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: args.system }] },
+          contents: [{ role: "user", parts: [{ text: args.prompt + (nudge ? JSON_RETRY_NUDGE : "") }] }],
+          generationConfig: {
+            temperature: args.temperature ?? 0.2,
+            responseMimeType: "application/json",
+          },
+        }),
+      },
+      { ...LLM_BACKOFF, ...deps },
+    );
+    if (!res.ok) return throwHttpError("Gemini", res);
+    return parseModelJson("Gemini", extractText((await res.json()) as GeminiResponse), args);
   }
 
   return {
     name: "gemini",
     model,
     isMock: false,
-    async generateJson<T>(args: LLMGenerateJsonArgs<T>): Promise<T> {
-      try {
-        return (await call(args as LLMGenerateJsonArgs<unknown>, false)) as T;
-      } catch {
-        // retry once with a "JSON only" nudge
-        return (await call(args as LLMGenerateJsonArgs<unknown>, true)) as T;
-      }
-    },
+    generateJson: (args) => withJsonRetry((nudge) => call(args, nudge)),
   };
 }

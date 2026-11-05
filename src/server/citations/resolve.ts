@@ -1,6 +1,7 @@
 import "server-only";
 
 import { parseServerEnv, serverEnvSchema } from "@/server/env";
+import { fetchWithBackoff, type FetchLike } from "@/server/http/fetch-backoff";
 import { arxivIdInText, deriveSearchUrl, pickMatch, titleSimilarity, yearCompatible, type MatchCandidate } from "./match";
 import type { BibEntry, ExternalWorkInsert, ResolvedReference } from "./types";
 
@@ -13,45 +14,19 @@ const EXTERNAL_TIMEOUT_MS = 15_000;
 /** Hard stop on S2 reference pagination (page size is 1000). */
 const S2_MAX_OFFSET = 5000;
 
-export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+export type { FetchLike };
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((r) => setTimeout(r, ms));
-}
-
-/** fetch with bounded retries; honors Retry-After and backs off on 429/5xx. */
+/** GET JSON with bounded retries; honors Retry-After and backs off on 429/5xx. */
 export async function fetchJsonWithBackoff(
   url: string,
   init: RequestInit = {},
   fetchImpl: FetchLike = fetch,
   maxAttempts = 4,
 ): Promise<unknown> {
-  let attempt = 0;
-  let delay = 500;
-  for (;;) {
-    attempt++;
-    let res: Response;
-    try {
-      res = await fetchImpl(url, {
-        ...init,
-        signal: init.signal ?? AbortSignal.timeout(EXTERNAL_TIMEOUT_MS),
-      });
-    } catch (err) {
-      if (attempt >= maxAttempts) throw err;
-      await sleep(delay);
-      delay *= 2;
-      continue;
-    }
-    if (res.ok) return res.json();
-    if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts) {
-      const retryAfter = Number(res.headers.get("retry-after"));
-      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 15000) : delay);
-      delay *= 2;
-      continue;
-    }
-    const body = await res.text().catch(() => "");
-    throw new Error(`GET ${url} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
-  }
+  const res = await fetchWithBackoff(url, init, { fetchImpl, maxAttempts, timeoutMs: EXTERNAL_TIMEOUT_MS });
+  if (res.ok) return res.json();
+  const body = await res.text().catch(() => "");
+  throw new Error(`GET ${url} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
 }
 
 // ---------------------------------------------------------------------------
