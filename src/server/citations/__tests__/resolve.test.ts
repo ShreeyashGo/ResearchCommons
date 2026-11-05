@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  bareDoi,
   fetchOpenAlexByDoi,
   oaWorkToWork,
   rebuildAbstract,
 } from "../resolve";
+
+describe("bareDoi", () => {
+  it("strips resolver URLs and a DOI prefix", () => {
+    expect(bareDoi("  HTTPS://DX.DOI.ORG/10.1234/a-paper  ")).toBe(
+      "10.1234/a-paper",
+    );
+    expect(bareDoi(" DOI:10.1234/a-paper ")).toBe("10.1234/a-paper");
+    expect(bareDoi("https://doi.org/")).toBeNull();
+    expect(bareDoi(undefined)).toBeNull();
+  });
+});
 
 describe("rebuildAbstract", () => {
   it("orders words by position", () => {
@@ -33,13 +45,14 @@ describe("rebuildAbstract", () => {
 
 describe("OpenAlex work conversion", () => {
   it("rebuilds the abstract from OpenAlex's inverted index", () => {
-    expect(
-      oaWorkToWork({
-        id: "https://openalex.org/W1",
-        display_name: "A title",
-        abstract_inverted_index: { words: [1], "A": [0] },
-      })?.abstract,
-    ).toBe("A words");
+    const work = oaWorkToWork({
+      id: "https://openalex.org/W1",
+      display_name: "A title",
+      abstract_inverted_index: { words: [1], "A": [0] },
+      doi: "https://doi.org/10.1234/a-paper",
+    });
+    expect(work?.abstract).toBe("A words");
+    expect(work?.doi).toBe("10.1234/a-paper");
   });
 });
 
@@ -58,7 +71,7 @@ describe("fetchOpenAlexByDoi", () => {
       );
     });
 
-    await fetchOpenAlexByDoi("10.1234/a-paper", {
+    await fetchOpenAlexByDoi("https://doi.org/10.1234/a-paper", {
       mailto: "reader@example.com",
       fetchImpl,
     });

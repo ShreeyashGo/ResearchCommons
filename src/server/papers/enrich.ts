@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  bareDoi,
   fetchJsonWithBackoff,
   fetchOpenAlexByDoi,
   searchOpenAlex,
@@ -72,7 +73,7 @@ function crossrefMetadata(work: CrossrefWork | null): MetadataCandidate {
       typeof yearValue === "number" && Number.isInteger(yearValue)
         ? yearValue
         : null,
-    doi: typeof work.DOI === "string" ? work.DOI : null,
+    doi: bareDoi(typeof work.DOI === "string" ? work.DOI : null),
     abstract: abstract || null,
   };
 }
@@ -101,7 +102,7 @@ function crossrefWork(json: unknown, byDoi: boolean, title: string): CrossrefWor
 
 function firstPageAbstract(text: string): string | null {
   const match =
-    /\babstract\b[\s.:—-]*([\s\S]+?)(?=\b(?:1\.?\s+)?introduction\b|\bkeywords?\b|$)/i.exec(
+    /\babstract\b[\s.:—-]*([\s\S]+?)(?=\b(?:1\.?\s+)?introduction\b|\bkeywords?\b)/i.exec(
       text,
     );
   const abstract = match?.[1]?.trim();
@@ -164,10 +165,11 @@ export async function enrichPaperMetadata(
     : null;
   const mailto = deps.mailto ?? env?.CONTACT_EMAIL;
   const fetchImpl = deps.fetchImpl ?? fetch;
+  const doi = bareDoi(paper.doi);
 
-  if (paper.doi) {
+  if (doi) {
     try {
-      merge(await fetchOpenAlexByDoi(paper.doi, { mailto, fetchImpl }));
+      merge(await fetchOpenAlexByDoi(doi, { mailto, fetchImpl }));
     } catch (error) {
       console.warn(`[enrich] OpenAlex DOI lookup failed for ${paperId}:`, error);
     }
@@ -198,13 +200,13 @@ export async function enrichPaperMetadata(
   }
 
   if (hasMissingFields()) {
-    const doi = updates.doi ?? paper.doi;
+    const crossrefDoi = bareDoi(updates.doi ?? doi);
     const url = new URL(
-      doi
-        ? `https://api.crossref.org/works/${encodeURIComponent(doi)}`
+      crossrefDoi
+        ? `https://api.crossref.org/works/${encodeURIComponent(crossrefDoi)}`
         : "https://api.crossref.org/works",
     );
-    if (!doi) {
+    if (!crossrefDoi) {
       url.searchParams.set("query.bibliographic", paper.title);
       url.searchParams.set("rows", "1");
     }
@@ -218,7 +220,7 @@ export async function enrichPaperMetadata(
       );
       merge(
         crossrefMetadata(
-          crossrefWork(json, Boolean(doi), paper.title),
+          crossrefWork(json, Boolean(crossrefDoi), paper.title),
         ),
       );
     } catch (error) {
@@ -251,10 +253,29 @@ export async function enrichPaperMetadata(
   );
   if (updated.length === 0) return { updated };
 
+  const { data: currentPaper, error: currentPaperError } = await admin
+    .from("papers")
+    .select("abstract, authors, year, doi")
+    .eq("id", paperId)
+    .maybeSingle();
+  if (currentPaperError) throw currentPaperError;
+  if (!currentPaper) return { updated: [] };
+
+  const safeUpdates = { ...updates };
+  if (!isEmptyAbstract(currentPaper.abstract)) delete safeUpdates.abstract;
+  if (currentPaper.authors.length > 0) delete safeUpdates.authors;
+  if (currentPaper.year !== null) delete safeUpdates.year;
+  if (currentPaper.doi !== null) delete safeUpdates.doi;
+
+  const appliedFields = ["abstract", "authors", "year", "doi"].filter((field) =>
+    Object.prototype.hasOwnProperty.call(safeUpdates, field),
+  );
+  if (appliedFields.length === 0) return { updated: [] };
+
   const { error: updateError } = await admin
     .from("papers")
-    .update(updates)
+    .update(safeUpdates)
     .eq("id", paperId);
   if (updateError) throw updateError;
-  return { updated };
+  return { updated: appliedFields };
 }

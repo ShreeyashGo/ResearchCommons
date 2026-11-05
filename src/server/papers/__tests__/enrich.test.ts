@@ -120,7 +120,7 @@ describe("enrichPaperMetadata", () => {
       abstract: "This paper enriches metadata",
       authors: ["Ada Lovelace"],
       year: 2022,
-      doi: "https://doi.org/10.1234/example",
+      doi: "10.1234/example",
     });
   });
 
@@ -141,7 +141,7 @@ describe("enrichPaperMetadata", () => {
               title: ["Metadata Enrichment for Research Papers"],
               author: [{ given: "Grace", family: "Hopper" }],
               issued: { "date-parts": [[2021]] },
-              DOI: "10.5555/crossref",
+              DOI: "https://doi.org/10.5555/crossref",
               abstract:
                 "<jats:p>Abstract: Crossref abstract with <jats:italic>JATS</jats:italic> markup.</jats:p>",
             },
@@ -193,6 +193,44 @@ describe("enrichPaperMetadata", () => {
     expect(updates).toEqual([{ abstract: abstractText.trim() }]);
   });
 
+  it("does not extract an abstract when the first page has no terminating heading", async () => {
+    const { admin, updates } = fakeAdmin({
+      authors: ["Existing Author"],
+      year: 2020,
+    });
+    const bodyText =
+      "This section describes the study and its findings in detail. ".repeat(3);
+    getPaperPages.mockResolvedValue([
+      { pageIndex: 0, text: `Abstract: ${bodyText}` },
+    ]);
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.includes("api.openalex.org")
+        ? jsonResponse({ results: [] })
+        : jsonResponse({ message: { items: [] } }),
+    );
+
+    await expect(
+      enrichPaperMetadata("paper-1", { admin, fetchImpl }),
+    ).resolves.toEqual({ updated: [] });
+    expect(updates).toEqual([]);
+  });
+
+  it("does not overwrite fields edited while metadata lookups are in flight", async () => {
+    const { admin, paper, updates } = fakeAdmin();
+    const fetchImpl = vi.fn(async () => {
+      paper.abstract = "A user-provided abstract.";
+      paper.authors = ["User Author"];
+      return jsonResponse({ results: [openAlexWork()] });
+    });
+
+    await expect(
+      enrichPaperMetadata("paper-1", { admin, fetchImpl }),
+    ).resolves.toEqual({ updated: ["year", "doi"] });
+    expect(updates).toEqual([
+      { year: 2022, doi: "10.1234/example" },
+    ]);
+  });
+
   it("preserves nonempty metadata and skips non-upload papers without fetching", async () => {
     const { admin, updates } = fakeAdmin({
       abstract: "A user-provided abstract.",
@@ -219,8 +257,20 @@ describe("enrichPaperMetadata", () => {
   });
 
   it("returns no updates when all external sources fail", async () => {
-    const { admin, updates } = fakeAdmin({ doi: "10.1234/example" });
-    const fetchImpl = vi.fn(async () => new Response("", { status: 404 }));
+    const { admin, updates } = fakeAdmin({
+      doi: "https://doi.org/10.1234/example",
+    });
+    let callCount = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      callCount += 1;
+      if (callCount === 1) {
+        expect(url).toContain("/works/doi:10.1234%2Fexample");
+      }
+      if (callCount === 3) {
+        expect(url).toContain("/works/10.1234%2Fexample");
+      }
+      return new Response("", { status: 404 });
+    });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     await expect(

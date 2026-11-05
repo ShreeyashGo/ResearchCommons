@@ -117,6 +117,15 @@ export interface OaSearchResponse {
   results?: OaWork[];
 }
 
+export function bareDoi(doi: string | null | undefined): string | null {
+  const value = doi
+    ?.trim()
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
+    .replace(/^doi:/i, "")
+    .trim();
+  return value || null;
+}
+
 export function rebuildAbstract(
   index: Record<string, number[]> | null | undefined,
 ): string | null {
@@ -152,7 +161,7 @@ export function oaWorkToWork(w: OaWork): ExternalWorkInsert | null {
     year: w.publication_year ?? null,
     venue: w.primary_location?.source?.display_name ?? null,
     abstract: rebuildAbstract(w.abstract_inverted_index),
-    doi: w.doi ?? w.ids?.doi ?? null,
+    doi: bareDoi(w.doi ?? w.ids?.doi),
     arxivId: arxivIdBase,
     url: w.primary_location?.landing_page_url ?? w.id,
     openAccessPdfUrl: w.open_access?.oa_url ?? null,
@@ -163,8 +172,10 @@ export async function fetchOpenAlexByDoi(
   doi: string,
   opts: { mailto?: string; fetchImpl?: FetchLike } = {},
 ): Promise<ExternalWorkInsert | null> {
+  const normalizedDoi = bareDoi(doi);
+  if (!normalizedDoi) return null;
   const url = new URL(
-    `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`,
+    `https://api.openalex.org/works/doi:${encodeURIComponent(normalizedDoi)}`,
   );
   url.searchParams.set("select", OA_SELECT);
   if (opts.mailto) url.searchParams.set("mailto", opts.mailto);
