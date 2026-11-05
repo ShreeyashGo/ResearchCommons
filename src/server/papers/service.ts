@@ -173,11 +173,11 @@ export async function listLibrary(
 ): Promise<LibraryPaper[]> {
   await requireGroupMember(supabase, groupId, userId);
   let entries: LibraryEntry[];
-  if (query.q !== undefined) {
+  if (query.q) {
     const { data, error } = await supabase.rpc("search_group_library", {
       p_group_id: groupId,
       p_q: query.q,
-      p_tag: query.tag ?? null,
+      p_tag: query.tag || null,
     });
     if (error) {
       throw internal(`Library search failed: ${error.message}`);
