@@ -458,13 +458,13 @@ export const mockApi: Api = {
     const s = store();
     const paper = [...s.papers.values()].find((p) => p.id === paperId);
     if (!paper) throw new ApiClientError(404, { error: { code: "not_found", message: "Paper not found" } }, "not found");
-    paper.processingStatus = "processing";
+    paper.processingStatus = "pending";
     setTimeout(() => {
       paper.processingStatus = "ready";
       paper.pageCount = PAPER1_SPEC.pages.length;
       emitLibraryChange(paper.groupId);
     }, 3000);
-    return { processingStatus: "processing" };
+    return { processingStatus: "pending" };
   },
 
   async explainCitation(paperId, referenceId) {

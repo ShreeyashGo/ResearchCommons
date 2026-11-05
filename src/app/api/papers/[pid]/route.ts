@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { Uuid } from "@/contracts/common";
 import { GetPaperResponse } from "@/contracts/papers";
 import { validationFailed } from "@/server/http/errors";
@@ -7,6 +8,7 @@ import {
   routeHandler,
   uuidParam,
 } from "@/server/http/handler";
+import { drainJobs } from "@/server/jobs/worker";
 import { getPaperDownload } from "@/server/papers/service";
 
 export const GET = routeHandler<{ pid: string }>(async (req, ctx) => {
@@ -21,5 +23,16 @@ export const GET = routeHandler<{ pid: string }>(async (req, ctx) => {
     throw validationFailed("groupId query parameter is not a valid UUID.");
   }
   const result = await getPaperDownload(supabase, user, groupId.data, pid);
-  return json(GetPaperResponse.parse(result));
+  const response = GetPaperResponse.parse(result);
+  if (
+    response.paper.processingStatus === "pending" ||
+    response.paper.processingStatus === "processing"
+  ) {
+    after(() =>
+      drainJobs(1).catch((error) => {
+        console.error("[jobs] poll-triggered drain failed:", error);
+      }),
+    );
+  }
+  return json(response);
 });

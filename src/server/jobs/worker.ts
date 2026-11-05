@@ -1,0 +1,68 @@
+import "server-only";
+
+import {
+  claimJobs,
+  completeJob,
+  failJob,
+  type Job,
+  type JobKind,
+} from "@/server/jobs/queue";
+import {
+  claimPaperProcessing,
+  runClaimedPaperProcessing,
+} from "@/server/citations/pipeline";
+
+type JobHandler = (payload: Record<string, unknown>) => Promise<void>;
+
+type WorkerDeps = {
+  claimJobs: (limit: number) => Promise<Job[]>;
+  completeJob: (id: string) => Promise<void>;
+  failJob: (job: Job, message: string) => Promise<void>;
+  handlers: Partial<Record<JobKind, JobHandler>>;
+};
+
+const defaultDeps: WorkerDeps = {
+  claimJobs,
+  completeJob,
+  failJob,
+  handlers: {
+    "paper.process": async (payload) => {
+      const paperId = payload.paperId;
+      if (typeof paperId !== "string") {
+        throw new Error("paper.process job has no paperId");
+      }
+      if (!(await claimPaperProcessing(paperId))) {
+        throw new Error("paper is already being processed");
+      }
+      await runClaimedPaperProcessing(paperId);
+    },
+  },
+};
+
+export async function drainJobs(
+  max = 5,
+  deps: WorkerDeps = defaultDeps,
+): Promise<{ processed: number; failed: number }> {
+  let processed = 0;
+  let failed = 0;
+
+  while (processed + failed < max) {
+    const [job] = await deps.claimJobs(1);
+    if (!job) break;
+
+    try {
+      const handler = deps.handlers[job.kind];
+      if (!handler) throw new Error(`unknown job kind: ${job.kind}`);
+      await handler(job.payload);
+      await deps.completeJob(job.id);
+      processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[jobs] job ${job.id} failed: ${message}`);
+      await deps.failJob(job, message);
+      failed += 1;
+    }
+  }
+
+  return { processed, failed };
+}

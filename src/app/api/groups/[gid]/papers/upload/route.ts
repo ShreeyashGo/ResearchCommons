@@ -1,6 +1,5 @@
 import { after } from "next/server";
 import { ImportPaperResponse, UploadPaperMetadata } from "@/contracts/papers";
-import { startPaperProcessing } from "@/server/citations/pipeline";
 import { validationFailed } from "@/server/http/errors";
 import {
   json,
@@ -8,6 +7,8 @@ import {
   routeHandler,
   uuidParam,
 } from "@/server/http/handler";
+import { enqueuePaperProcessing } from "@/server/jobs/queue";
+import { drainJobs } from "@/server/jobs/worker";
 import { uploadPaper } from "@/server/papers/service";
 
 export const POST = routeHandler<{ gid: string }>(async (req, ctx) => {
@@ -37,7 +38,17 @@ export const POST = routeHandler<{ gid: string }>(async (req, ctx) => {
   }
 
   const result = await uploadPaper(supabase, user, gid, file, metadata);
-  after(() => startPaperProcessing(result.paperId));
+  if (
+    result.paper.processingStatus === "pending" ||
+    result.paper.processingStatus === "failed"
+  ) {
+    await enqueuePaperProcessing(result.paperId);
+    after(() =>
+      drainJobs(1).catch((error) => {
+        console.error("[jobs] upload-triggered drain failed:", error);
+      }),
+    );
+  }
   return json(
     ImportPaperResponse.parse({
       paper: result.paper,
