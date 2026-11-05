@@ -2,13 +2,20 @@
 
 import { useMemo } from "react";
 import { Lock } from "lucide-react";
-import type { Annotation, CitationContext, NormalizedRect } from "@/contracts";
+import {
+  anchorSegments,
+  type AnchorSegment,
+  type Annotation,
+  type CitationContext,
+  type NormalizedRect,
+} from "@/contracts";
 import { reanchor, rectsForText } from "@/lib/client/anchors";
 import { annotationColorCss, cn } from "@/lib/client/utils";
 import type { PdfPageHandle } from "./pdf-viewer";
 
 export interface PageAnnotation {
   annotation: Annotation;
+  segment: AnchorSegment;
   rects: NormalizedRect[] | null; // null = orphaned on this page
 }
 
@@ -33,8 +40,14 @@ export function PageOverlays({
     if (!page.map || !page.el) return [];
     const out: PageAnnotation[] = [];
     for (const a of annotations) {
-      if (a.anchor.pageIndex !== page.index) continue;
-      out.push({ annotation: a, rects: reanchor(a.anchor, page.map, page.el) });
+      for (const segment of anchorSegments(a.anchor)) {
+        if (segment.pageIndex !== page.index) continue;
+        out.push({
+          annotation: a,
+          segment,
+          rects: reanchor(segment, page.map, page.el),
+        });
+      }
     }
     return out;
   }, [page.map, page.el, page.index, annotations]);
@@ -55,10 +68,10 @@ export function PageOverlays({
   return (
     <>
       {/* Highlight rects */}
-      {anchored.map(({ annotation, rects }) =>
+      {anchored.map(({ annotation, segment, rects }) =>
         (rects ?? []).map((r, i) => (
           <div
-            key={`${annotation.id}:${i}`}
+            key={`${annotation.id}:${segment.pageIndex}:${i}`}
             className={cn(
               "ann-highlight",
               annotation.visibility === "private" && "is-private",
@@ -102,8 +115,14 @@ export function PageOverlays({
       )}
 
       {/* Margin badges (the "dot"): first rect of each anchored annotation */}
-      {anchored.map(({ annotation, rects }) => {
-        if (!rects || rects.length === 0) return null;
+      {anchored.map(({ annotation, segment, rects }) => {
+        if (
+          segment.pageIndex !== annotation.anchor.pageIndex ||
+          !rects ||
+          rects.length === 0
+        ) {
+          return null;
+        }
         const first = rects[0];
         const count = annotation.comments.reduce((n, c) => n + 1 + c.replies.length, 0);
         return (

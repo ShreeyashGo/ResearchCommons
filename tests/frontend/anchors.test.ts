@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, beforeAll } from "vitest";
-import { AnnotationAnchor } from "@/contracts";
 import {
+  AnnotationAnchor,
+  anchorPageLabel,
+  anchorSegments,
+} from "@/contracts";
+import {
+  anchorFromSelection,
   buildPageTextMap,
   mergeLineRects,
   pageText,
@@ -212,5 +217,193 @@ describe("AnnotationAnchor contract", () => {
   it("rejects anchors with more than 200 rects", () => {
     const big = { ...base, rects: Array.from({ length: 201 }, () => makeRect(0.1)) };
     expect(AnnotationAnchor.safeParse(big).success).toBe(false);
+  });
+
+  const segment = (pageIndex: number) => ({
+    pageIndex,
+    rects: [makeRect(0.1)],
+    quote: { exact: "ok", prefix: "", suffix: "" },
+    position: { start: 0, end: 2 },
+  });
+  const v2 = {
+    version: 2 as const,
+    pageIndex: 0,
+    rects: segment(0).rects,
+    quote: { exact: "first second", prefix: "", suffix: "" },
+    segments: [segment(0), segment(1)],
+  };
+
+  it("accepts a well-formed v2 anchor", () => {
+    expect(AnnotationAnchor.safeParse(v2).success).toBe(true);
+  });
+
+  it("rejects non-consecutive v2 segments", () => {
+    expect(
+      AnnotationAnchor.safeParse({
+        ...v2,
+        segments: [segment(0), segment(2)],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a v2 pageIndex that differs from its first segment", () => {
+    expect(
+      AnnotationAnchor.safeParse({ ...v2, pageIndex: 1 }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a v2 anchor with fewer than two segments", () => {
+    expect(
+      AnnotationAnchor.safeParse({ ...v2, segments: [segment(0)] }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a v2 anchor with more than ten segments", () => {
+    expect(
+      AnnotationAnchor.safeParse({
+        ...v2,
+        segments: Array.from({ length: 11 }, (_, index) => segment(index)),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("returns page segments and page labels for v1 and v2", () => {
+    const parsedV1 = AnnotationAnchor.parse(base);
+    const parsedV2 = AnnotationAnchor.parse(v2);
+    expect(anchorSegments(parsedV1)).toEqual([
+      {
+        pageIndex: 0,
+        rects: base.rects,
+        quote: base.quote,
+        position: base.position,
+      },
+    ]);
+    expect(anchorSegments(parsedV2)).toEqual(v2.segments);
+    expect(anchorPageLabel(parsedV1)).toBe("p.1");
+    expect(anchorPageLabel(parsedV2)).toBe("p.1–2");
+  });
+});
+
+describe("anchorFromSelection", () => {
+  function page(index: number, text: string) {
+    const pageEl = document.createElement("div");
+    pageEl.className = "pdf-page";
+    pageEl.dataset.pageIndex = String(index);
+    pageEl.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        width: 1000,
+        height: 1000,
+        right: 1000,
+        bottom: 1000,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const span = document.createElement("span");
+    span.textContent = text;
+    pageEl.appendChild(span);
+    document.body.appendChild(pageEl);
+    const map = buildPageTextMap({ items: [{ str: text }] } as never, pageEl);
+    return {
+      pageEl,
+      map,
+      pageIndex: index,
+      span,
+      textNode: span.firstChild as Text,
+    };
+  }
+
+  beforeAll(() => {
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: function (this: Range) {
+        const rect = {
+          x: 20,
+          y: 20,
+          width: 100,
+          height: 10,
+          left: 20,
+          top: 20,
+          right: 120,
+          bottom: 30,
+          toJSON: () => ({}),
+        };
+        return [rect] as unknown as DOMRectList;
+      },
+    });
+  });
+
+  function select(
+    startPage: ReturnType<typeof page>,
+    startOffset: number,
+    endPage: ReturnType<typeof page>,
+    endOffset: number,
+  ) {
+    const range = document.createRange();
+    range.setStart(startPage.textNode, startOffset);
+    range.setEnd(endPage.textNode, endOffset);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return selection;
+  }
+
+  it("creates v2 segments from a selection spanning two pages", () => {
+    const text0 = "first page has selected tail";
+    const text1 = "selected start of second page";
+    const page0 = page(0, text0);
+    const page1 = page(1, text1);
+    const start = text0.indexOf("selected");
+    const end = "selected".length;
+
+    const anchor = anchorFromSelection(
+      select(page0, start, page1, end),
+      [
+        { pageEl: page0.pageEl, map: page0.map, pageIndex: 0 },
+        { pageEl: page1.pageEl, map: page1.map, pageIndex: 1 },
+      ],
+    );
+
+    expect(anchor?.version).toBe(2);
+    if (anchor?.version !== 2) throw new Error("Expected a v2 anchor.");
+    expect(anchor.pageIndex).toBe(0);
+    expect(anchor.segments).toHaveLength(2);
+    expect(anchor.segments[0]?.quote.exact).toBe(text0.slice(start));
+    expect(anchor.segments[1]?.quote.exact).toBe(text1.slice(0, end));
+    expect(anchor.segments[1]?.position).toEqual({ start: 0, end });
+    expect(anchor.quote.exact).toBe(
+      `${text0.slice(start)} ${text1.slice(0, end)}`,
+    );
+  });
+
+  it("keeps a single-page selection as v1", () => {
+    const text = "single page selection";
+    const page0 = page(0, text);
+    const anchor = anchorFromSelection(
+      select(page0, 0, page0, text.length),
+      [{ pageEl: page0.pageEl, map: page0.map, pageIndex: 0 }],
+    );
+    expect(anchor?.version).toBe(1);
+    expect(anchor?.quote.exact).toBe(text);
+  });
+
+  it("keeps an offset-zero next-page end as a v1 anchor on the first page", () => {
+    const text0 = "selected first-page tail";
+    const text1 = "next page begins";
+    const page0 = page(0, text0);
+    const page1 = page(1, text1);
+    const start = text0.indexOf("selected");
+    const anchor = anchorFromSelection(
+      select(page0, start, page1, 0),
+      [
+        { pageEl: page0.pageEl, map: page0.map, pageIndex: 0 },
+        { pageEl: page1.pageEl, map: page1.map, pageIndex: 1 },
+      ],
+    );
+    expect(anchor?.version).toBe(1);
+    expect(anchor?.pageIndex).toBe(0);
+    expect(anchor?.quote.exact).toBe(text0.slice(start));
   });
 });

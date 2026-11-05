@@ -1,4 +1,4 @@
-import type { AnnotationAnchor, NormalizedRect } from "@/contracts";
+import type { AnchorSegment, AnnotationAnchor, NormalizedRect } from "@/contracts";
 import type { TextContent } from "./pdfjs";
 
 /**
@@ -197,17 +197,96 @@ function clippedSelectionEnd(range: Range, pageEl: HTMLElement, map: PageTextMap
 /**
  * Convert the current DOM selection inside a pdf page element into an
  * AnnotationAnchor, or null when the selection doesn't cover page text.
- * Multi-page selections are clipped to the starting page (MVP rule, §5).
  */
 export function anchorFromSelection(
+  selection: Selection,
+  pages: Array<{ pageEl: HTMLElement; map: PageTextMap; pageIndex: number }>,
+): AnnotationAnchor | null {
+  if (selection.rangeCount === 0 || selection.isCollapsed) return null;
+  if (pages.length === 0) return null;
+  if (pages.length === 1) {
+    const page = pages[0]!;
+    return anchorFromSinglePageSelection(
+      selection,
+      page.pageEl,
+      page.map,
+      page.pageIndex,
+    );
+  }
+
+  const range = selection.getRangeAt(0);
+  const firstPage = pages[0]!;
+
+  const startSpan = ownerSpan(range.startContainer);
+  if (!startSpan || !firstPage.pageEl.contains(startSpan)) return null;
+  const startSpanRange = spanRange(startSpan);
+  if (!startSpanRange) return null;
+
+  const start = startSpanRange[0] + charOffsetWithin(startSpan, range.startContainer, range.startOffset);
+
+  const lastPage = pages[pages.length - 1]!;
+  const endSpan = ownerSpan(range.endContainer);
+  let lastEnd: number;
+  if (endSpan && lastPage.pageEl.contains(endSpan) && spanRange(endSpan)) {
+    lastEnd = spanRange(endSpan)![0] + charOffsetWithin(endSpan, range.endContainer, range.endOffset);
+  } else {
+    lastEnd = clippedSelectionEnd(range, lastPage.pageEl, lastPage.map) ?? 0;
+  }
+
+  const segments: AnchorSegment[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i]!;
+    const segmentStart = i === 0 ? start : 0;
+    const segmentEnd =
+      i === pages.length - 1 ? lastEnd : page.map.text.length;
+    if (segmentEnd <= segmentStart) continue;
+    const exact = page.map.text.slice(segmentStart, segmentEnd);
+    if (!exact.trim()) continue;
+    const rects = rectsForRange(
+      page.map,
+      page.pageEl,
+      segmentStart,
+      segmentEnd,
+    );
+    if (rects.length === 0) continue;
+    segments.push({
+      pageIndex: page.pageIndex,
+      rects,
+      quote: {
+        exact,
+        prefix: page.map.text.slice(Math.max(0, segmentStart - 32), segmentStart),
+        suffix: page.map.text.slice(segmentEnd, segmentEnd + 32),
+      },
+      position: { start: segmentStart, end: segmentEnd },
+    });
+  }
+
+  if (segments.length === 0) return null;
+  if (segments.length === 1) {
+    return { version: 1, ...segments[0]! };
+  }
+  const first = segments[0]!;
+  const last = segments[segments.length - 1]!;
+  return {
+    version: 2,
+    pageIndex: first.pageIndex,
+    rects: first.rects,
+    quote: {
+      exact: segments.map((segment) => segment.quote.exact).join(" "),
+      prefix: first.quote.prefix,
+      suffix: last.quote.suffix,
+    },
+    segments,
+  };
+}
+
+function anchorFromSinglePageSelection(
   selection: Selection,
   pageEl: HTMLElement,
   map: PageTextMap,
   pageIndex: number,
 ): AnnotationAnchor | null {
-  if (selection.rangeCount === 0 || selection.isCollapsed) return null;
   const range = selection.getRangeAt(0);
-
   const startSpan = ownerSpan(range.startContainer);
   if (!startSpan || !pageEl.contains(startSpan)) return null;
   const startSpanRange = spanRange(startSpan);
@@ -268,7 +347,7 @@ export function anchorFromSelection(
  * text-layer spans; otherwise the anchor is orphaned.
  */
 export function reanchor(
-  anchor: AnnotationAnchor,
+  anchor: AnchorSegment,
   map: PageTextMap,
   pageEl: HTMLElement,
 ): NormalizedRect[] | null {

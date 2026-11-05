@@ -554,4 +554,102 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
     expect(library.reviewCount).toBe(0);
     expect(library.addedBy?.id).toBe(a.id);
   });
+
+  it("round-trips v2 annotations and rejects anchors beyond the paper", async () => {
+    const group = await createGroup(a.client, a.id, {
+      name: `Multi-page annotations group ${randomUUID()}`,
+      description: "",
+    });
+    groupIds.push(group.id);
+    const imported = await uploadPaper(
+      a.client,
+      a.user,
+      group.id,
+      new File([makePdf()], "multi-page-annotations.pdf", {
+        type: "application/pdf",
+      }),
+      { tags: [] },
+    );
+    paperIds.push(imported.paperId);
+    const { error: pageCountError } = await admin
+      .from("papers")
+      .update({ page_count: 2 })
+      .eq("id", imported.paperId);
+    expect(pageCountError).toBeNull();
+
+    const rect = { x: 0.1, y: 0.2, w: 0.3, h: 0.05 };
+    const first = {
+      pageIndex: 0,
+      rects: [rect],
+      quote: { exact: "first page", prefix: "before ", suffix: " middle" },
+      position: { start: 7, end: 17 },
+    };
+    const second = {
+      pageIndex: 1,
+      rects: [rect],
+      quote: { exact: "second page", prefix: "middle ", suffix: " after" },
+      position: { start: 7, end: 18 },
+    };
+    const anchor = {
+      version: 2 as const,
+      pageIndex: 0,
+      rects: first.rects,
+      quote: {
+        exact: "first page second page",
+        prefix: first.quote.prefix,
+        suffix: second.quote.suffix,
+      },
+      segments: [first, second],
+    };
+
+    const created = AnnotationResponse.parse({
+      annotation: await createAnnotation(
+        a.client,
+        a.user,
+        group.id,
+        imported.paperId,
+        { anchor },
+      ),
+    }).annotation;
+    expect(created.anchor).toEqual(anchor);
+    const listed = ListAnnotationsResponse.parse({
+      annotations: await listAnnotations(
+        a.client,
+        a.user,
+        group.id,
+        imported.paperId,
+      ),
+    });
+    expect(listed.annotations).toContainEqual(created);
+
+    const outOfRangeV2 = {
+      ...anchor,
+      pageIndex: 1,
+      quote: {
+        exact: "page one page two",
+        prefix: "",
+        suffix: "",
+      },
+      segments: [
+        { ...first, pageIndex: 1 },
+        { ...second, pageIndex: 2 },
+      ],
+    };
+    await expect(
+      createAnnotation(a.client, a.user, group.id, imported.paperId, {
+        anchor: outOfRangeV2,
+      }),
+    ).rejects.toMatchObject({
+      code: "validation_failed",
+      message: "Anchor page out of range.",
+    });
+    await expect(
+      createAnnotation(a.client, a.user, group.id, imported.paperId, {
+        anchor: { ...ANCHOR("v1 out of range"), pageIndex: 2 },
+      }),
+    ).rejects.toMatchObject({
+      code: "validation_failed",
+      message: "Anchor page out of range.",
+    });
+  });
 });

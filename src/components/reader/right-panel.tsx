@@ -15,15 +15,16 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type {
-  Annotation,
-  CitationExplanation,
-  LibraryPaper,
-  PaperAnswer,
-  Reference,
-  Review,
-  WorkSummary,
-  AiMeta,
+import {
+  anchorPageLabel,
+  type Annotation,
+  type CitationExplanation,
+  type LibraryPaper,
+  type PaperAnswer,
+  type Reference,
+  type Review,
+  type WorkSummary,
+  type AiMeta,
 } from "@/contracts";
 import { api } from "@/lib/client/api";
 import type { SessionUser } from "@/lib/client/auth";
@@ -470,7 +471,7 @@ export function RightPanel({
                       </Badge>
                     )}
                     <span className="ml-auto text-[10px] text-muted">
-                      p.{a.anchor.pageIndex + 1} · {relativeTime(a.createdAt)}
+                      {anchorPageLabel(a.anchor)} · {relativeTime(a.createdAt)}
                     </span>
                   </div>
                   <p className="mt-1 line-clamp-2 text-[12px] italic leading-4.5 text-ink-soft">
@@ -493,7 +494,7 @@ export function RightPanel({
                       “{truncate(a.anchor.quote.exact, 90)}”
                     </p>
                     <p className="mt-1 text-[10px] text-muted">
-                      {a.author.displayName} · text no longer found on page {a.anchor.pageIndex + 1}
+                      {a.author.displayName} · text no longer found on page(s) {anchorPageLabel(a.anchor)}
                     </p>
                   </div>
                 ))}

@@ -31,6 +31,15 @@ interface PageSize {
   h: number;
 }
 
+function pageElementFor(node: Node | null): HTMLElement | null {
+  let element: HTMLElement | null =
+    node instanceof HTMLElement ? node : node?.parentElement ?? null;
+  while (element && !element.classList.contains("pdf-page")) {
+    element = element.parentElement;
+  }
+  return element;
+}
+
 /**
  * Virtualized pdf.js renderer: canvas + text layer per page, pages rendered
  * when they approach the viewport (§5). Overlay layers (highlights, badges,
@@ -104,23 +113,37 @@ export function PdfViewer({
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !onTextSelect) return;
     const range = sel.getRangeAt(0);
-    let pageEl: HTMLElement | null =
-      range.startContainer instanceof HTMLElement
-        ? range.startContainer
-        : range.startContainer.parentElement;
-    while (pageEl && !pageEl.classList.contains("pdf-page")) {
-      pageEl = pageEl.parentElement;
-    }
+    const pageEl = pageElementFor(range.startContainer);
     if (!pageEl) return;
     const index = Number(pageEl.dataset.pageIndex);
-    const map = mapsRef.current.get(index);
-    if (!map || !Number.isFinite(index)) return;
-    const anchor = anchorFromSelection(sel, pageEl, map, index);
+    if (!Number.isFinite(index)) return;
+
+    const endPageEl = pageElementFor(range.endContainer);
+    const endIndex = endPageEl ? Number(endPageEl.dataset.pageIndex) : index;
+    const lastIndex =
+      Number.isFinite(endIndex) && endIndex >= index ? endIndex : index;
+    const root = scrollRef.current;
+    if (!root) return;
+    const pages: Array<{
+      pageEl: HTMLElement;
+      map: PageTextMap;
+      pageIndex: number;
+    }> = [];
+    for (let pageIndex = index; pageIndex <= lastIndex; pageIndex++) {
+      const renderedPage = root.querySelector<HTMLElement>(
+        `.pdf-page[data-page-index="${pageIndex}"]`,
+      );
+      const map = mapsRef.current.get(pageIndex);
+      if (!renderedPage || !map) break;
+      pages.push({ pageEl: renderedPage, map, pageIndex });
+    }
+    if (pages.length === 0) return;
+    const anchor = anchorFromSelection(sel, pages);
     if (!anchor) return;
     const rects = range.getClientRects();
     const first = rects[0];
     onTextSelect({
-      pageIndex: index,
+      pageIndex: anchor.pageIndex,
       anchor,
       x: first ? first.left + first.width / 2 : 0,
       y: first ? first.top : 0,
