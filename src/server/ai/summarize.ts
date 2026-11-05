@@ -1,7 +1,7 @@
 import "server-only";
 
 import { WorkSummary, type AiMeta, type Grounding, type WorkInput } from "@/contracts/ai";
-import { extractPdf } from "@/server/citations/extract";
+import { getPaperPages } from "@/server/papers/text";
 import { createAdminClient } from "@/server/supabase/admin";
 import { AiOutputError } from "./explain";
 import { buildCacheKey, getCached, hashInputs, storeCached } from "./cache";
@@ -39,33 +39,17 @@ export async function summarizePaper(
   const admin = createAdminClient();
   const { data: paper, error } = await admin
     .from("papers")
-    .select("id,title,authors,year,abstract,storage_path")
+    .select("id,title,authors,year,abstract")
     .eq("id", paperId)
     .maybeSingle();
   if (error) throw new Error(`papers read failed: ${error.message}`);
   if (!paper) return null;
 
   let fullText: string | undefined;
-  if (paper.storage_path) {
-    try {
-      const { data: blob, error: dlErr } = await admin.storage
-        .from("papers")
-        .download(paper.storage_path);
-      if (!dlErr && blob) {
-        const extracted = await extractPdf(new Uint8Array(await blob.arrayBuffer()));
-        const text = extracted.pages
-          .map((p) => p.text)
-          .join("\n")
-          .replace(/\s+/g, " ")
-          .trim();
-        if (text.length > 200) fullText = text.slice(0, FULL_TEXT_LIMIT);
-      }
-    } catch (err) {
-      // best-effort: extraction failures degrade to abstract_only grounding
-      console.warn(
-        `[summary] full-text extraction failed for ${paperId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
+  const pages = await getPaperPages(paperId, admin);
+  if (pages) {
+    const text = pages.map((p) => p.text).join("\n");
+    if (text.length > 200) fullText = text.slice(0, FULL_TEXT_LIMIT);
   }
 
   return summarizeWork(

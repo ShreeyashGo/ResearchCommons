@@ -33,7 +33,7 @@ tests/              unit (vitest), rls (vitest vs local supabase), e2e (playwrig
 See migration for exact DDL. Key identity rules:
 - `papers` is canonical and shared: dedupe by `arxiv_id` (normalized, no version) or `pdf_sha256`.
 - `group_papers` puts a paper into a group library. Annotations, comments, and reviews reference `(group_id, paper_id)` via a composite FK, so they always belong to one group's copy.
-- Citation intelligence (`paper_references`, `citation_contexts`, `ai_summaries`) is per canonical paper and readable by anyone who can read the paper. `external_works` is shared metadata.
+- Citation intelligence (`paper_references`, `citation_contexts`, `ai_summaries`, `paper_texts`) is per canonical paper and readable by anyone who can read the paper. `external_works` is shared metadata.
 - Comments: one level of threading; `group_id/paper_id` denormalized by trigger; soft delete (body cleared).
 - Immutable on update (enforced by triggers): annotation anchor/quote/page/group/paper/author; comment parent/annotation/author; review group/paper/author; group_paper ids/added_by.
 
@@ -41,7 +41,8 @@ See migration for exact DDL. Key identity rules:
 Helpers (SECURITY DEFINER, `search_path=''`): `is_group_member`, `is_group_owner`, `can_read_paper`, `can_read_annotation`, `shares_group_with`.
 - Groups: create via `create_group()` RPC, join via `join_group(invite_code)` RPC. Members read; owner updates/deletes.
 - Annotations: visible if member AND (`visibility='group'` OR author is me). Comments inherit annotation visibility.
-- Server-only writes: papers, group_papers insert, references, contexts, external_works, ai_summaries.
+- Server-only writes: papers, group_papers insert, references, contexts, external_works, ai_summaries, paper_texts.
+- `paper_texts` caches whitespace-normalized page text from the processing run; Ask AI and summaries read it via `getPaperPages` (falls back to extracting the stored PDF once and caching it).
 - Storage: private bucket `papers`, object key `papers/{paperId}.pdf`; no client storage policies; server returns signed URLs (10 min).
 - `anon` has no table access.
 
