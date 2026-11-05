@@ -625,11 +625,6 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
     const outOfRangeV2 = {
       ...anchor,
       pageIndex: 1,
-      quote: {
-        exact: "page one page two",
-        prefix: "",
-        suffix: "",
-      },
       segments: [
         { ...first, pageIndex: 1 },
         { ...second, pageIndex: 2 },

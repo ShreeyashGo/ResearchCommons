@@ -229,7 +229,7 @@ describe("AnnotationAnchor contract", () => {
     version: 2 as const,
     pageIndex: 0,
     rects: segment(0).rects,
-    quote: { exact: "first second", prefix: "", suffix: "" },
+    quote: { exact: "ok ok", prefix: "", suffix: "" },
     segments: [segment(0), segment(1)],
   };
 
@@ -237,11 +237,46 @@ describe("AnnotationAnchor contract", () => {
     expect(AnnotationAnchor.safeParse(v2).success).toBe(true);
   });
 
-  it("rejects non-consecutive v2 segments", () => {
+  it("accepts v2 segments on pages that contain selected text", () => {
     expect(
       AnnotationAnchor.safeParse({
         ...v2,
         segments: [segment(0), segment(2)],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects v2 segments that are not strictly increasing", () => {
+    expect(
+      AnnotationAnchor.safeParse({
+        ...v2,
+        pageIndex: 2,
+        segments: [segment(2), segment(1)],
+      }).success,
+    ).toBe(false);
+    expect(
+      AnnotationAnchor.safeParse({
+        ...v2,
+        pageIndex: 1,
+        segments: [segment(1), segment(1)],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects v2 segments spanning more than 20 page indexes", () => {
+    expect(
+      AnnotationAnchor.safeParse({
+        ...v2,
+        segments: [segment(0), segment(21)],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a v2 top-level exact quote that differs from its segments", () => {
+    expect(
+      AnnotationAnchor.safeParse({
+        ...v2,
+        quote: { ...v2.quote, exact: "different" },
       }).success,
     ).toBe(false);
   });
@@ -301,17 +336,19 @@ describe("anchorFromSelection", () => {
         y: 0,
         toJSON: () => ({}),
       }) as DOMRect;
-    const span = document.createElement("span");
-    span.textContent = text;
-    pageEl.appendChild(span);
+    const textNode = text ? document.createTextNode(text) : null;
+    if (textNode) {
+      const span = document.createElement("span");
+      span.appendChild(textNode);
+      pageEl.appendChild(span);
+    }
     document.body.appendChild(pageEl);
     const map = buildPageTextMap({ items: [{ str: text }] } as never, pageEl);
     return {
       pageEl,
       map,
       pageIndex: index,
-      span,
-      textNode: span.firstChild as Text,
+      textNode,
     };
   }
 
@@ -342,8 +379,8 @@ describe("anchorFromSelection", () => {
     endOffset: number,
   ) {
     const range = document.createRange();
-    range.setStart(startPage.textNode, startOffset);
-    range.setEnd(endPage.textNode, endOffset);
+    range.setStart(startPage.textNode!, startOffset);
+    range.setEnd(endPage.textNode!, endOffset);
     const selection = document.getSelection()!;
     selection.removeAllRanges();
     selection.addRange(range);
@@ -376,6 +413,33 @@ describe("anchorFromSelection", () => {
     expect(anchor.quote.exact).toBe(
       `${text0.slice(start)} ${text1.slice(0, end)}`,
     );
+  });
+
+  it("skips a textless middle page and accepts the resulting v2 anchor", () => {
+    const text0 = "selected first-page tail";
+    const text2 = "selected third-page start";
+    const page0 = page(0, text0);
+    const page1 = page(1, "");
+    const page2 = page(2, text2);
+    const start = text0.indexOf("selected");
+    const end = "selected".length;
+
+    const anchor = anchorFromSelection(
+      select(page0, start, page2, end),
+      [
+        { pageEl: page0.pageEl, map: page0.map, pageIndex: 0 },
+        { pageEl: page1.pageEl, map: page1.map, pageIndex: 1 },
+        { pageEl: page2.pageEl, map: page2.map, pageIndex: 2 },
+      ],
+    );
+
+    expect(page1.map.spans).toHaveLength(0);
+    expect(anchor?.version).toBe(2);
+    expect(anchor?.version === 2 ? anchor.segments.map((s) => s.pageIndex) : []).toEqual([
+      0,
+      2,
+    ]);
+    expect(AnnotationAnchor.safeParse(anchor).success).toBe(true);
   });
 
   it("keeps a single-page selection as v1", () => {

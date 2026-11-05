@@ -66,15 +66,36 @@ export const AnnotationAnchor = z
         message: "Anchor pageIndex must match its first segment.",
       });
     }
+    const lastPageIndex = anchor.segments[anchor.segments.length - 1]!.pageIndex;
+    if (lastPageIndex - firstPageIndex > 20) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["segments"],
+        message: "Anchor segments cannot span more than 20 page indexes.",
+      });
+    }
     anchor.segments.forEach((segment, index) => {
-      if (segment.pageIndex !== firstPageIndex + index) {
+      if (
+        index > 0 &&
+        segment.pageIndex <= anchor.segments[index - 1]!.pageIndex
+      ) {
         ctx.addIssue({
           code: "custom",
           path: ["segments", index, "pageIndex"],
-          message: "Anchor segments must be on consecutive pages.",
+          message: "Anchor segment page indexes must be strictly increasing.",
         });
       }
     });
+    if (
+      anchor.quote.exact !==
+      anchor.segments.map((segment) => segment.quote.exact).join(" ")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["quote", "exact"],
+        message: "Anchor quote exact must match the joined segment exacts.",
+      });
+    }
   });
 export type AnnotationAnchor = z.infer<typeof AnnotationAnchor>;
 
