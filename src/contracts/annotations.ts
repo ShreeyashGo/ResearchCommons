@@ -30,14 +30,93 @@ export const TextPositionSelector = z.object({
   end: z.number().int().min(1),
 });
 
-export const AnnotationAnchor = z.object({
+export const AnchorSegment = z.object({
+  pageIndex: z.number().int().min(0),
+  rects: z.array(NormalizedRect).min(1).max(200),
+  quote: TextQuoteSelector,
+  position: TextPositionSelector.optional(),
+});
+export type AnchorSegment = z.infer<typeof AnchorSegment>;
+
+const AnchorV1 = z.object({
   version: z.literal(1),
   pageIndex: z.number().int().min(0),
   rects: z.array(NormalizedRect).min(1).max(200),
   quote: TextQuoteSelector,
   position: TextPositionSelector.optional(),
 });
+
+const AnchorV2 = z.object({
+  version: z.literal(2),
+  pageIndex: z.number().int().min(0),
+  rects: z.array(NormalizedRect).min(1).max(200),
+  quote: TextQuoteSelector,
+  segments: z.array(AnchorSegment).min(2).max(10),
+});
+
+export const AnnotationAnchor = z
+  .discriminatedUnion("version", [AnchorV1, AnchorV2])
+  .superRefine((anchor, ctx) => {
+    if (anchor.version !== 2) return;
+    const firstPageIndex = anchor.segments[0]!.pageIndex;
+    if (anchor.pageIndex !== firstPageIndex) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pageIndex"],
+        message: "Anchor pageIndex must match its first segment.",
+      });
+    }
+    const lastPageIndex = anchor.segments[anchor.segments.length - 1]!.pageIndex;
+    if (lastPageIndex - firstPageIndex > 20) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["segments"],
+        message: "Anchor segments cannot span more than 20 page indexes.",
+      });
+    }
+    anchor.segments.forEach((segment, index) => {
+      if (
+        index > 0 &&
+        segment.pageIndex <= anchor.segments[index - 1]!.pageIndex
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["segments", index, "pageIndex"],
+          message: "Anchor segment page indexes must be strictly increasing.",
+        });
+      }
+    });
+    if (
+      anchor.quote.exact !==
+      anchor.segments.map((segment) => segment.quote.exact).join(" ")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["quote", "exact"],
+        message: "Anchor quote exact must match the joined segment exacts.",
+      });
+    }
+  });
 export type AnnotationAnchor = z.infer<typeof AnnotationAnchor>;
+
+export function anchorSegments(anchor: AnnotationAnchor): AnchorSegment[] {
+  if (anchor.version === 2) return anchor.segments;
+  return [
+    {
+      pageIndex: anchor.pageIndex,
+      rects: anchor.rects,
+      quote: anchor.quote,
+      ...(anchor.position ? { position: anchor.position } : {}),
+    },
+  ];
+}
+
+export function anchorPageLabel(anchor: AnnotationAnchor): string {
+  const segments = anchorSegments(anchor);
+  const firstPage = segments[0]!.pageIndex + 1;
+  const lastPage = segments[segments.length - 1]!.pageIndex + 1;
+  return firstPage === lastPage ? `p.${firstPage}` : `p.${firstPage}–${lastPage}`;
+}
 
 export const AnnotationColor = z.enum(["yellow", "green", "blue", "pink", "purple"]);
 export const AnnotationVisibility = z.enum(["group", "private"]);

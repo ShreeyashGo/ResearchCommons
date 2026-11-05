@@ -18,7 +18,12 @@ import type {
   Reference,
   Review,
 } from "@/contracts";
-import { AnnotationAnchor, AnnotationColor, AnnotationVisibility } from "@/contracts";
+import {
+  AnnotationAnchor,
+  AnnotationColor,
+  AnnotationVisibility,
+  anchorSegments,
+} from "@/contracts";
 import { api } from "@/lib/client/api";
 import { useSessionUser } from "@/lib/client/auth";
 import { reanchor, type PageTextMap } from "@/lib/client/anchors";
@@ -436,15 +441,22 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
     }
   }, [paperId, groupId, paper]);
 
-  // Orphaned annotations: reanchor fails on their page (page rendered).
+  // Any rendered segment can make a multi-page annotation orphaned.
   // mapVersion bumps whenever a page map lands, so this re-runs as maps arrive.
   const orphaned = useMemo(() => {
     void mapVersion;
     const out: Annotation[] = [];
     for (const a of annotations) {
-      const map = pageMaps.current.get(a.anchor.pageIndex);
-      const el = pageElements.current.get(a.anchor.pageIndex);
-      if (map && el && reanchor(a.anchor, map, el) === null) out.push(a);
+      const isOrphaned = anchorSegments(a.anchor).some((segment) => {
+        const map = pageMaps.current.get(segment.pageIndex);
+        const el = pageElements.current.get(segment.pageIndex);
+        return (
+          map !== undefined &&
+          el !== undefined &&
+          reanchor(segment, map, el) === null
+        );
+      });
+      if (isOrphaned) out.push(a);
     }
     return out;
   }, [annotations, mapVersion]);

@@ -11,7 +11,7 @@ import type {
   UpdateAnnotationRequest,
   UpdateCommentRequest,
 } from "@/contracts/annotations";
-import { CreateAnnotationRequest } from "@/contracts/annotations";
+import { anchorSegments, CreateAnnotationRequest } from "@/contracts/annotations";
 import { fetchProfiles, requireGroupMember } from "@/server/groups/service";
 import {
   forbidden,
@@ -168,6 +168,24 @@ export async function createAnnotation(
   await requirePaperInGroup(supabase, groupId, paperId);
   const body = CreateAnnotationRequest.parse(input);
   const anchor = body.anchor as AnnotationAnchor;
+  const lastSegment = anchorSegments(anchor).at(-1)!;
+  const { data: paper, error: paperError } = await supabase
+    .from("papers")
+    .select("page_count")
+    .eq("id", paperId)
+    .maybeSingle();
+  if (paperError) {
+    throw internal(`Paper lookup failed: ${paperError.message}`);
+  }
+  if (!paper) {
+    throw notFound("Paper not found.");
+  }
+  if (
+    paper.page_count !== null &&
+    lastSegment.pageIndex >= paper.page_count
+  ) {
+    throw validationFailed("Anchor page out of range.");
+  }
   const { data, error } = await supabase
     .from("annotations")
     .insert({

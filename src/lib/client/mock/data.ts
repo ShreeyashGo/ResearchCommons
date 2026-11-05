@@ -1,5 +1,7 @@
 import type {
+  AnchorSegment,
   Annotation,
+  AnnotationAnchor,
   CitationContext,
   CommentThread,
   DashboardResponse,
@@ -197,6 +199,55 @@ export const PAPER2_SPEC: MockPdfSpec = {
     ],
   ],
 };
+
+function mockSegment(
+  pageIndex: number,
+  lines: MockPdfSpec["pages"][number],
+  lineIndex: number,
+  y: number,
+): AnchorSegment {
+  const text = lines
+    .map((line) => line.text.replace(/ {2,}/g, " "))
+    .join("");
+  const exact = lines[lineIndex]!.text.replace(/ {2,}/g, " ");
+  const start = text.lastIndexOf(exact);
+  if (start < 0) {
+    throw new Error("Mock PDF line is not present in its page text.");
+  }
+  const end = start + exact.length;
+  return {
+    pageIndex,
+    rects: [{ x: 0.1, y, w: 0.7, h: 0.02 }],
+    quote: {
+      exact,
+      prefix: text.slice(Math.max(0, start - 32), start),
+      suffix: text.slice(end, end + 32),
+    },
+    position: { start, end },
+  };
+}
+
+const MULTIPAGE_MOCK_ANCHOR: AnnotationAnchor = (() => {
+  const page0 = PAPER1_SPEC.pages[0]!;
+  const page1 = PAPER1_SPEC.pages[1]!;
+  const segments = [
+    mockSegment(0, page0, page0.length - 1, 0.72),
+    mockSegment(1, page1, 0, 0.08),
+  ];
+  const first = segments[0]!;
+  const last = segments[segments.length - 1]!;
+  return {
+    version: 2,
+    pageIndex: first.pageIndex,
+    rects: first.rects,
+    quote: {
+      exact: segments.map((segment) => segment.quote.exact).join(" "),
+      prefix: first.quote.prefix,
+      suffix: last.quote.suffix,
+    },
+    segments,
+  };
+})();
 
 /** pdf bytes cache, keyed by paper id, plus the object URL we hand out. */
 const pdfBytes = new Map<string, Uint8Array>();
@@ -515,6 +566,18 @@ export function initialState(): MockState {
       comments: [],
       createdAt: iso(45),
       updatedAt: iso(45),
+    },
+    {
+      id: "f5000000-0000-4000-8000-000000000004",
+      groupId: G1,
+      paperId: P1,
+      author: EDSGER,
+      visibility: "group",
+      color: "purple",
+      anchor: MULTIPAGE_MOCK_ANCHOR,
+      comments: [],
+      createdAt: iso(30),
+      updatedAt: iso(30),
     },
   ]);
   annotations.set(`${G2}:${P1}`, []);
