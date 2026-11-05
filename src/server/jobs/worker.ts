@@ -4,6 +4,8 @@ import {
   claimJobs,
   completeJob,
   failJob,
+  markPaperProcessingPending,
+  nextStateAfterFailure,
   type Job,
   type JobKind,
 } from "@/server/jobs/queue";
@@ -18,6 +20,7 @@ type WorkerDeps = {
   claimJobs: (limit: number) => Promise<Job[]>;
   completeJob: (job: Job) => Promise<boolean>;
   failJob: (job: Job, message: string) => Promise<boolean>;
+  markPaperProcessingPending: (paperId: string) => Promise<void>;
   handlers: Partial<Record<JobKind, JobHandler>>;
 };
 
@@ -25,6 +28,7 @@ const defaultDeps: WorkerDeps = {
   claimJobs,
   completeJob,
   failJob,
+  markPaperProcessingPending,
   handlers: {
     "paper.process": async (payload) => {
       const paperId = payload.paperId;
@@ -59,8 +63,22 @@ export async function drainJobs(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[jobs] job ${job.id} failed: ${message}`);
-      await deps.failJob(job, message);
+      const applied = await deps.failJob(job, message);
       failed += 1;
+      if (
+        !applied ||
+        job.kind !== "paper.process" ||
+        nextStateAfterFailure(job).status !== "queued"
+      ) {
+        continue;
+      }
+      const paperId = job.payload.paperId;
+      if (typeof paperId !== "string") continue;
+      try {
+        await deps.markPaperProcessingPending(paperId);
+      } catch (retryError) {
+        console.error(`[jobs] retry state update failed for ${job.id}:`, retryError);
+      }
     }
   }
 

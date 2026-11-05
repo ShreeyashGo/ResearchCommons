@@ -31,6 +31,7 @@ function depsFor(jobs: Job[], handler = vi.fn(async () => undefined)) {
     }),
     completeJob: vi.fn(async () => true),
     failJob: vi.fn(async () => true),
+    markPaperProcessingPending: vi.fn(async () => undefined),
     handlers: { "paper.process": handler },
   };
 }
@@ -56,6 +57,55 @@ describe("drainJobs", () => {
 
     await expect(drainJobs(5, deps)).resolves.toEqual({ processed: 0, failed: 1 });
     expect(deps.failJob).toHaveBeenCalledWith(job, "temporary failure");
+  });
+
+  it("marks paper pending for a retry while attempts remain", async () => {
+    const job = makeJob({ payload: { paperId: "paper-1" }, attempts: 1, maxAttempts: 3 });
+    const deps = depsFor(
+      [job],
+      vi.fn(async () => {
+        throw new Error("temporary failure");
+      }),
+    );
+
+    await drainJobs(1, deps);
+
+    expect(deps.failJob).toHaveBeenCalledWith(job, "temporary failure");
+    expect(deps.markPaperProcessingPending).toHaveBeenCalledWith("paper-1");
+  });
+
+  it("does not mark paper pending when attempts are exhausted", async () => {
+    const job = makeJob({
+      payload: { paperId: "paper-1" },
+      attempts: 3,
+      maxAttempts: 3,
+    });
+    const deps = depsFor(
+      [job],
+      vi.fn(async () => {
+        throw new Error("terminal failure");
+      }),
+    );
+
+    await drainJobs(1, deps);
+
+    expect(deps.failJob).toHaveBeenCalledWith(job, "terminal failure");
+    expect(deps.markPaperProcessingPending).not.toHaveBeenCalled();
+  });
+
+  it("does not mark paper pending when the lease was lost", async () => {
+    const job = makeJob();
+    const deps = depsFor(
+      [job],
+      vi.fn(async () => {
+        throw new Error("temporary failure");
+      }),
+    );
+    deps.failJob.mockResolvedValue(false);
+
+    await drainJobs(1, deps);
+
+    expect(deps.markPaperProcessingPending).not.toHaveBeenCalled();
   });
 
   it("stops when max jobs have been processed", async () => {
