@@ -2,7 +2,7 @@ import "server-only";
 
 import { AskTurn, PaperAnswer, type AiMeta, type Grounding, type LLMProvider } from "@/contracts/ai";
 import type { z } from "zod";
-import { extractPdf } from "@/server/citations/extract";
+import { getPaperPages } from "@/server/papers/text";
 import { createAdminClient } from "@/server/supabase/admin";
 import { AiOutputError } from "./explain";
 import { ASK_SYSTEM, PROMPT_VERSION, buildAskPrompt } from "./prompts";
@@ -35,34 +35,24 @@ export async function askPaper(
   const admin = createAdminClient();
   const { data: paper, error } = await admin
     .from("papers")
-    .select("id,title,abstract,storage_path")
+    .select("id,title,abstract")
     .eq("id", paperId)
     .maybeSingle();
   if (error) throw new Error(`papers read failed: ${error.message}`);
   if (!paper) return null;
 
   let pages: Array<{ pageIndex: number; text: string }> | undefined;
-  if (paper.storage_path) {
-    try {
-      const { data: blob, error: dlErr } = await admin.storage
-        .from("papers")
-        .download(paper.storage_path);
-      if (!dlErr && blob) {
-        const extracted = await extractPdf(new Uint8Array(await blob.arrayBuffer()));
-        let budget = FULL_TEXT_LIMIT;
-        const tagged: Array<{ pageIndex: number; text: string }> = [];
-        for (const page of extracted.pages) {
-          const text = page.text.replace(/\s+/g, " ").trim();
-          if (!text || budget <= 0) continue;
-          tagged.push({ pageIndex: page.pageIndex, text: text.slice(0, budget) });
-          budget -= text.length;
-        }
-        const total = tagged.reduce((n, p) => n + p.text.length, 0);
-        if (total > 200) pages = tagged;
-      }
-    } catch (err) {
-      console.warn(`[ask] full-text extraction failed for ${paperId}:`, err);
+  const stored = await getPaperPages(paperId, admin);
+  if (stored) {
+    let budget = FULL_TEXT_LIMIT;
+    const tagged: Array<{ pageIndex: number; text: string }> = [];
+    for (const page of stored) {
+      if (budget <= 0) break;
+      tagged.push({ pageIndex: page.pageIndex, text: page.text.slice(0, budget) });
+      budget -= page.text.length;
     }
+    const total = tagged.reduce((n, p) => n + p.text.length, 0);
+    if (total > 200) pages = tagged;
   }
 
   const grounding: Grounding = pages ? "full_text" : paper.abstract ? "abstract_only" : "metadata_only";

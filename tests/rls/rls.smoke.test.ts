@@ -248,6 +248,22 @@ describe.skipIf(!rlsTestsEnabled)("local Supabase RLS smoke tests", () => {
       expect(cPaper.error).toBeNull();
       expect(cPaper.data).toEqual([]);
 
+      const { error: textError } = await service
+        .from("paper_texts")
+        .insert({ paper_id: paper.id, pages: [{ pageIndex: 0, text: "cached" }] });
+      expect(textError).toBeNull();
+      const bText = await userB.client.from("paper_texts").select("paper_id").eq("paper_id", paper.id);
+      expect(bText.error).toBeNull();
+      expect(bText.data).toHaveLength(1);
+      const cText = await userC.client.from("paper_texts").select("paper_id").eq("paper_id", paper.id);
+      expect(cText.data ?? []).toEqual([]);
+      const aTextWrite = await userA.client
+        .from("paper_texts")
+        .update({ pages: [] })
+        .eq("paper_id", paper.id)
+        .select("paper_id");
+      expect(aTextWrite.data ?? []).toEqual([]);
+
       const { error: groupCommentError } = await userB.client
         .from("comments")
         .insert({

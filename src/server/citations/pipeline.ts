@@ -1,5 +1,6 @@
 import "server-only";
 
+import { normalizePages, savePaperPages } from "@/server/papers/text";
 import { createAdminClient } from "@/server/supabase/admin";
 import { parseBibliography } from "./bibliography";
 import { buildContexts } from "./contexts";
@@ -180,6 +181,11 @@ async function runPaperProcessing(admin: Admin, paperId: string): Promise<void> 
       p_contexts: contextsJson,
     });
     if (rpcErr) throw new Error(rpcErr.message);
+
+    // Best-effort cache: getPaperPages falls back to extracting the PDF.
+    await savePaperPages(admin, paperId, normalizePages(analysis.extracted.pages)).catch((err: unknown) =>
+      console.warn(`[pipeline] paper_texts write failed for ${paperId}:`, err),
+    );
 
     const { error: doneErr } = await admin
       .from("papers")
