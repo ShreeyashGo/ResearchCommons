@@ -91,16 +91,24 @@ export async function claimJobs(
   return ((data ?? []) as JobRow[]).map(fromRow);
 }
 
-export async function completeJob(id: string): Promise<void> {
-  const { error } = await createAdminClient()
+export async function completeJob(job: Job): Promise<boolean> {
+  const { data, error } = await createAdminClient()
     .from("jobs")
     .update({
       status: "done",
       locked_until: null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", job.id)
+    .eq("status", "running")
+    .eq("attempts", job.attempts)
+    .select("id");
   if (error) throw error;
+  if (!data?.length) {
+    console.warn(`[jobs] job ${job.id} lease lost; skipping`);
+    return false;
+  }
+  return true;
 }
 
 export function retryDelayMs(attempts: number): number {
@@ -128,13 +136,21 @@ export function nextStateAfterFailure(
   return { status: "failed", locked_until: null, updated_at: updatedAt };
 }
 
-export async function failJob(job: Job, message: string): Promise<void> {
-  const { error } = await createAdminClient()
+export async function failJob(job: Job, message: string): Promise<boolean> {
+  const { data, error } = await createAdminClient()
     .from("jobs")
     .update({
       ...nextStateAfterFailure(job),
       last_error: message.slice(0, 800),
     })
-    .eq("id", job.id);
+    .eq("id", job.id)
+    .eq("status", "running")
+    .eq("attempts", job.attempts)
+    .select("id");
   if (error) throw error;
+  if (!data?.length) {
+    console.warn(`[jobs] job ${job.id} lease lost; skipping`);
+    return false;
+  }
+  return true;
 }

@@ -29,8 +29,8 @@ function depsFor(jobs: Job[], handler = vi.fn(async () => undefined)) {
       const job = claimed.shift();
       return job ? [job] : [];
     }),
-    completeJob: vi.fn(async () => undefined),
-    failJob: vi.fn(async () => undefined),
+    completeJob: vi.fn(async () => true),
+    failJob: vi.fn(async () => true),
     handlers: { "paper.process": handler },
   };
 }
@@ -41,7 +41,7 @@ describe("drainJobs", () => {
     const deps = depsFor([job]);
 
     await expect(drainJobs(5, deps)).resolves.toEqual({ processed: 1, failed: 0 });
-    expect(deps.completeJob).toHaveBeenCalledWith(job.id);
+    expect(deps.completeJob).toHaveBeenCalledWith(job);
     expect(deps.failJob).not.toHaveBeenCalled();
   });
 

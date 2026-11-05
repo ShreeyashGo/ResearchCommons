@@ -16,8 +16,8 @@ type JobHandler = (payload: Record<string, unknown>) => Promise<void>;
 
 type WorkerDeps = {
   claimJobs: (limit: number) => Promise<Job[]>;
-  completeJob: (id: string) => Promise<void>;
-  failJob: (job: Job, message: string) => Promise<void>;
+  completeJob: (job: Job) => Promise<boolean>;
+  failJob: (job: Job, message: string) => Promise<boolean>;
   handlers: Partial<Record<JobKind, JobHandler>>;
 };
 
@@ -54,7 +54,7 @@ export async function drainJobs(
       const handler = deps.handlers[job.kind];
       if (!handler) throw new Error(`unknown job kind: ${job.kind}`);
       await handler(job.payload);
-      await deps.completeJob(job.id);
+      await deps.completeJob(job);
       processed += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
