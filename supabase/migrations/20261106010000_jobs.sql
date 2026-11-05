@@ -38,12 +38,22 @@ security definer
 set search_path = ''
 as $$
 begin
-  update public.jobs
-     set status = 'failed',
-         last_error = coalesce(last_error, 'lease expired'),
-         locked_until = null,
-         updated_at = now()
-   where status = 'running' and locked_until < now() and attempts >= max_attempts;
+  with dead as (
+    update public.jobs
+       set status = 'failed',
+           last_error = coalesce(last_error, 'lease expired'),
+           locked_until = null,
+           updated_at = now()
+     where status = 'running' and locked_until < now() and attempts >= max_attempts
+    returning kind, payload
+  )
+  update public.papers p
+     set processing_status = 'failed',
+         processing_error = 'processing timed out'
+    from dead
+   where dead.kind = 'paper.process'
+     and p.id::text = dead.payload->>'paperId'
+     and p.processing_status in ('pending', 'processing');
 
   return query
   update public.jobs j

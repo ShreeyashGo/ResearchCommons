@@ -14,6 +14,7 @@ describe.skipIf(!rlsTestsEnabled)("jobs RLS and claim RPC", () => {
   let user: SupabaseClient | undefined;
   let userId: string | undefined;
   const jobIds: string[] = [];
+  const paperIds: string[] = [];
 
   beforeAll(async () => {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -58,6 +59,13 @@ describe.skipIf(!rlsTestsEnabled)("jobs RLS and claim RPC", () => {
     if (!admin || jobIds.length === 0) return;
     const ids = jobIds.splice(0, jobIds.length);
     const { error } = await admin.from("jobs").delete().in("id", ids);
+    if (error) throw error;
+  });
+
+  afterEach(async () => {
+    if (!admin || paperIds.length === 0) return;
+    const ids = paperIds.splice(0, paperIds.length);
+    const { error } = await admin.from("papers").delete().in("id", ids);
     if (error) throw error;
   });
 
@@ -160,7 +168,22 @@ describe.skipIf(!rlsTestsEnabled)("jobs RLS and claim RPC", () => {
 
   it("fails expired jobs that have exhausted attempts without returning them", async () => {
     if (!admin) throw new Error("Service client is not initialized.");
+    const { data: paper, error: paperError } = await admin
+      .from("papers")
+      .insert({
+        source: "upload",
+        title: `Expired jobs paper ${randomUUID()}`,
+        authors: [],
+        processing_status: "processing",
+      })
+      .select("id")
+      .single();
+    expect(paperError).toBeNull();
+    if (!paper) throw new Error("Service client did not create a test paper.");
+    paperIds.push(paper.id);
+
     const id = await insertJob({
+      paperId: paper.id,
       status: "running",
       attempts: 3,
       maxAttempts: 3,
@@ -181,5 +204,14 @@ describe.skipIf(!rlsTestsEnabled)("jobs RLS and claim RPC", () => {
       .single();
     expect(lookupError).toBeNull();
     expect(job?.status).toBe("failed");
+
+    const { data: updatedPaper, error: updatedPaperError } = await admin
+      .from("papers")
+      .select("processing_status, processing_error")
+      .eq("id", paper.id)
+      .single();
+    expect(updatedPaperError).toBeNull();
+    expect(updatedPaper?.processing_status).toBe("failed");
+    expect(updatedPaper?.processing_error).toBe("processing timed out");
   });
 });
