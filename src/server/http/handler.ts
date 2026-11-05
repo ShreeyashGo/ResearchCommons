@@ -63,7 +63,19 @@ export function noContent(): NextResponse {
 
 function toErrorResponse(error: unknown): NextResponse {
   if (error instanceof HttpError) {
-    return NextResponse.json(error.toBody(), { status: error.status });
+    const response = NextResponse.json(error.toBody(), { status: error.status });
+    if (
+      error.code === "rate_limited" &&
+      error.details !== null &&
+      typeof error.details === "object" &&
+      typeof (error.details as { retryAfter?: unknown }).retryAfter === "number"
+    ) {
+      response.headers.set(
+        "Retry-After",
+        String((error.details as { retryAfter: number }).retryAfter),
+      );
+    }
+    return response;
   }
   if (error instanceof ZodError) {
     const httpError = validationFailed("Request failed validation.", error.issues);

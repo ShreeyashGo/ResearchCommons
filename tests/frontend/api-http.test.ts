@@ -36,6 +36,40 @@ describe("api-http error mapping", () => {
     });
   });
 
+  it("shows a friendly retry message for rate-limited errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        respond(429, {
+          error: {
+            code: "rate_limited",
+            message: "Too many requests.",
+            details: { retryAfter: 15 },
+          },
+        }),
+      ),
+    );
+    await expect(httpApi.me()).rejects.toMatchObject({
+      status: 429,
+      code: "rate_limited",
+      message: "You're doing that too often. Try again in 15s.",
+    });
+  });
+
+  it("uses a short retry message when rate-limit details are absent", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        respond(429, {
+          error: { code: "rate_limited", message: "Too many requests." },
+        }),
+      ),
+    );
+    await expect(httpApi.me()).rejects.toMatchObject({
+      message: "You're doing that too often. Try again shortly.",
+    });
+  });
+
   it("throws ApiClientError (not a raw ZodError) on a malformed 200 body", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => respond(200, { unexpected: true })));
     const err = await httpApi.me().catch((e: unknown) => e);

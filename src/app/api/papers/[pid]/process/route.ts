@@ -3,6 +3,7 @@ import { ProcessPaperResponse } from "@/contracts/citations";
 import { conflict } from "@/server/http/errors";
 import { json, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
 import { requirePaperAccess } from "@/server/citations/http";
+import { enforceRateLimit } from "@/server/http/rate-limit";
 import {
   enqueuePaperProcessing,
   markPaperProcessingPending,
@@ -18,6 +19,7 @@ export const POST = routeHandler<{ pid: string }>(async (_req, ctx) => {
   uuidParam(pid);
   const { supabase } = await requireUser();
   await requirePaperAccess(supabase, pid); // 404 unless can_read_paper
+  await enforceRateLimit(supabase, "process");
 
   const { enqueued } = await enqueuePaperProcessing(pid);
   if (!enqueued) throw conflict("paper is already being processed");

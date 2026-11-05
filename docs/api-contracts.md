@@ -32,6 +32,8 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/papers/:pid/ask` | `AskPaperRequest` | `AskPaperResponse` | Q&A grounded in the paper (full text when available, from the cached `paper_texts`); evidence = verbatim quotes with pageIndex; `notFoundInPaper` instead of guessing; not cached |
 | GET | `/api/groups/:gid/dashboard` | — | `DashboardResponse` | RLS-aware dashboard RPC; response shape unchanged |
 
+The ask, summary, citation-explain, upload, arXiv-import, and process endpoints may return 429 `rate_limited` with `details.retryAfter` and a matching `Retry-After` header.
+
 Realtime contract: `src/contracts/realtime.ts`. Server interfaces for AI: `LLMProvider`, `WorkInput`, `CitationInput` in `src/contracts/ai.ts`.
 
 Change process: propose to lead → lead edits contracts + this table in one commit → affected tracks rebase.

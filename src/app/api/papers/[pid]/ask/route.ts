@@ -4,6 +4,7 @@ import { askPaper } from "@/server/ai/ask";
 import { requireGroupPaperAccess } from "@/server/citations/http";
 import { internal, notFound, upstreamFailed } from "@/server/http/errors";
 import { json, parseJson, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
+import { enforceRateLimit } from "@/server/http/rate-limit";
 
 /**
  * POST /api/papers/:pid/ask — Q&A grounded in the paper being read (full text
@@ -16,6 +17,7 @@ export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
 
   const { supabase } = await requireUser();
   await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
+  await enforceRateLimit(supabase, "ask");
 
   let focusPassage: { pageIndex: number; quote: string } | undefined;
   if (body.annotationId) {

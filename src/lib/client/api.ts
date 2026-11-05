@@ -44,13 +44,27 @@ import {
  */
 export const API_MOCK = process.env.NEXT_PUBLIC_API_MOCK === "1";
 
+function errorMessage(body: ApiErrorBody | null, fallback: string): string {
+  if (body?.error.code !== "rate_limited") {
+    return body?.error.message ?? fallback;
+  }
+  const details = body.error.details;
+  const retryAfter =
+    details !== null && typeof details === "object"
+      ? (details as { retryAfter?: unknown }).retryAfter
+      : undefined;
+  return typeof retryAfter === "number"
+    ? `You're doing that too often. Try again in ${retryAfter}s.`
+    : "You're doing that too often. Try again shortly.";
+}
+
 export class ApiClientError extends Error {
   readonly status: number;
   readonly code: ErrorCode;
   readonly details: unknown;
 
   constructor(status: number, body: ApiErrorBody | null, fallback: string) {
-    super(body?.error.message ?? fallback);
+    super(errorMessage(body, fallback));
     this.status = status;
     this.code = body?.error.code ?? "internal";
     this.details = body?.error.details;
