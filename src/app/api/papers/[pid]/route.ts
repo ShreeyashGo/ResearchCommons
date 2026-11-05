@@ -8,6 +8,7 @@ import {
   routeHandler,
   uuidParam,
 } from "@/server/http/handler";
+import { enqueuePaperProcessing } from "@/server/jobs/queue";
 import { drainJobs } from "@/server/jobs/worker";
 import { getPaperDownload } from "@/server/papers/service";
 
@@ -24,10 +25,16 @@ export const GET = routeHandler<{ pid: string }>(async (req, ctx) => {
   }
   const result = await getPaperDownload(supabase, user, groupId.data, pid);
   const response = GetPaperResponse.parse(result);
-  if (
-    response.paper.processingStatus === "pending" ||
-    response.paper.processingStatus === "processing"
-  ) {
+  if (response.paper.processingStatus === "pending") {
+    after(async () => {
+      try {
+        await enqueuePaperProcessing(pid);
+        await drainJobs(1);
+      } catch (error) {
+        console.error(`[jobs] poll-triggered enqueue/drain failed for ${pid}:`, error);
+      }
+    });
+  } else if (response.paper.processingStatus === "processing") {
     after(() =>
       drainJobs(1).catch((error) => {
         console.error("[jobs] poll-triggered drain failed:", error);

@@ -20,12 +20,16 @@ export const POST = routeHandler<{ gid: string }>(async (req, ctx) => {
     result.paper.processingStatus === "pending" ||
     result.paper.processingStatus === "failed"
   ) {
-    await enqueuePaperProcessing(result.paperId);
-    after(() =>
-      drainJobs(1).catch((error) => {
-        console.error("[jobs] arXiv-triggered drain failed:", error);
-      }),
-    );
+    try {
+      await enqueuePaperProcessing(result.paperId);
+      after(() =>
+        drainJobs(1).catch((error) => {
+          console.error("[jobs] arXiv-triggered drain failed:", error);
+        }),
+      );
+    } catch (error) {
+      console.error(`[jobs] enqueue failed for ${result.paperId}:`, error);
+    }
   }
   return json(
     ImportPaperResponse.parse({
