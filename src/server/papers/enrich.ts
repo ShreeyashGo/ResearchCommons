@@ -29,6 +29,18 @@ type CrossrefWork = {
   abstract?: unknown;
 };
 
+function crossrefYear(work: CrossrefWork): number | null {
+  const issued = asRecord(work.issued);
+  const dateParts = issued?.["date-parts"];
+  const yearValue =
+    Array.isArray(dateParts) && Array.isArray(dateParts[0])
+      ? dateParts[0][0]
+      : null;
+  return typeof yearValue === "number" && Number.isInteger(yearValue)
+    ? yearValue
+    : null;
+}
+
 function isEmptyAbstract(value: string | null): boolean {
   return value === null || value.trim() === "";
 }
@@ -52,12 +64,6 @@ function crossrefMetadata(work: CrossrefWork | null): MetadataCandidate {
         })
         .filter(Boolean)
     : [];
-  const issued = asRecord(work.issued);
-  const dateParts = issued?.["date-parts"];
-  const yearValue =
-    Array.isArray(dateParts) && Array.isArray(dateParts[0])
-      ? dateParts[0][0]
-      : null;
   const abstract =
     typeof work.abstract === "string"
       ? work.abstract
@@ -69,16 +75,18 @@ function crossrefMetadata(work: CrossrefWork | null): MetadataCandidate {
 
   return {
     authors,
-    year:
-      typeof yearValue === "number" && Number.isInteger(yearValue)
-        ? yearValue
-        : null,
+    year: crossrefYear(work),
     doi: bareDoi(typeof work.DOI === "string" ? work.DOI : null),
     abstract: abstract || null,
   };
 }
 
-function crossrefWork(json: unknown, byDoi: boolean, title: string): CrossrefWork | null {
+function crossrefWork(
+  json: unknown,
+  byDoi: boolean,
+  title: string,
+  paperYear: number | null,
+): CrossrefWork | null {
   const message = asRecord(asRecord(json)?.message);
   if (!message) return null;
   const candidate = byDoi
@@ -93,7 +101,11 @@ function crossrefWork(json: unknown, byDoi: boolean, title: string): CrossrefWor
       && typeof candidate.title[0] === "string"
       ? candidate.title[0]
       : null;
-    if (!candidateTitle || titleSimilarity(title, candidateTitle) < 0.9) {
+    if (
+      !candidateTitle ||
+      titleSimilarity(title, candidateTitle) < 0.9 ||
+      !yearCompatible(paperYear, crossrefYear(candidate as CrossrefWork))
+    ) {
       return null;
     }
   }
@@ -182,16 +194,15 @@ export async function enrichPaperMetadata(
         fetchImpl,
       });
       const best = candidates
+        .filter((candidate) =>
+          yearCompatible(paper.year, candidate.work.year),
+        )
         .map((candidate) => ({
           work: candidate.work,
           similarity: titleSimilarity(paper.title, candidate.work.title),
         }))
         .sort((a, b) => b.similarity - a.similarity)[0];
-      if (
-        best &&
-        best.similarity >= 0.9 &&
-        yearCompatible(paper.year, best.work.year)
-      ) {
+      if (best && best.similarity >= 0.9) {
         merge(best.work);
       }
     } catch (error) {
@@ -220,7 +231,7 @@ export async function enrichPaperMetadata(
       );
       merge(
         crossrefMetadata(
-          crossrefWork(json, Boolean(crossrefDoi), paper.title),
+          crossrefWork(json, Boolean(crossrefDoi), paper.title, paper.year),
         ),
       );
     } catch (error) {

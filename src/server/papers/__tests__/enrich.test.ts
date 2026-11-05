@@ -124,6 +124,36 @@ describe("enrichPaperMetadata", () => {
     });
   });
 
+  it("chooses the best title match from year-compatible OpenAlex results", async () => {
+    const { admin, updates } = fakeAdmin({ year: 2020 });
+    const wrongYear = openAlexWork({
+      publication_year: 2018,
+      authorships: [{ author: { display_name: "Wrong Author" } }],
+      abstract_inverted_index: { Wrong: [0], year: [1] },
+      doi: "https://doi.org/10.1111/wrong",
+    });
+    const rightYear = openAlexWork({
+      publication_year: 2020,
+      authorships: [{ author: { display_name: "Right Author" } }],
+      abstract_inverted_index: { Right: [0], year: [1] },
+      doi: "https://doi.org/10.2222/right",
+    });
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ results: [wrongYear, rightYear] }),
+    );
+
+    await expect(
+      enrichPaperMetadata("paper-1", { admin, fetchImpl }),
+    ).resolves.toEqual({ updated: ["abstract", "authors", "doi"] });
+    expect(updates).toEqual([
+      {
+        abstract: "Right year",
+        authors: ["Right Author"],
+        doi: "10.2222/right",
+      },
+    ]);
+  });
+
   it("rejects a dissimilar OpenAlex result and fills fields from Crossref", async () => {
     const { admin, updates } = fakeAdmin();
     const fetchImpl = vi.fn(async (url: string) => {
@@ -163,6 +193,34 @@ describe("enrichPaperMetadata", () => {
       year: 2021,
       doi: "10.5555/crossref",
     });
+  });
+
+  it("rejects Crossref title matches with incompatible years", async () => {
+    const { admin, updates } = fakeAdmin({ year: 2020 });
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes("api.openalex.org")) {
+        return jsonResponse({ results: [] });
+      }
+      return jsonResponse({
+        message: {
+          items: [
+            {
+              title: ["Metadata Enrichment for Research Papers"],
+              author: [{ given: "Grace", family: "Hopper" }],
+              issued: { "date-parts": [[2018]] },
+              DOI: "10.5555/crossref",
+              abstract: "An abstract that must not be written.",
+            },
+          ],
+        },
+      });
+    });
+
+    await expect(
+      enrichPaperMetadata("paper-1", { admin, fetchImpl }),
+    ).resolves.toEqual({ updated: [] });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(updates).toEqual([]);
   });
 
   it("extracts an abstract from the first page when metadata sources omit it", async () => {
