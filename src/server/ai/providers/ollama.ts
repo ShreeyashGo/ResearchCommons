@@ -1,55 +1,45 @@
 import "server-only";
 
 import type { LLMGenerateJsonArgs, LLMProvider } from "@/contracts/ai";
+import { fetchWithBackoff } from "@/server/http/fetch-backoff";
+import { JSON_RETRY_NUDGE, LLM_BACKOFF, parseModelJson, throwHttpError, withJsonRetry, type ProviderDeps } from "./shared";
 
 interface OllamaChatResponse {
   message?: { content?: string };
 }
 
 /** Local Ollama provider (http://127.0.0.1:11434 by default). */
-export function ollamaProvider(baseUrl: string, model: string): LLMProvider {
+export function ollamaProvider(baseUrl: string, model: string, deps: ProviderDeps = {}): LLMProvider {
   const base = baseUrl.replace(/\/+$/, "");
 
-  async function call(args: LLMGenerateJsonArgs<unknown>, retry: boolean): Promise<unknown> {
-    const res = await fetch(`${base}/api/chat`, {
-      method: "POST",
-      signal: AbortSignal.timeout(60_000),
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        format: "json",
-        options: { temperature: args.temperature ?? 0.2 },
-        messages: [
-          { role: "system", content: args.system },
-          {
-            role: "user",
-            content: args.prompt + (retry ? "\n\nRETRY: respond with a single valid JSON object only." : ""),
-          },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Ollama chat failed: HTTP ${res.status} ${body.slice(0, 300)}`);
-    }
+  async function call<T>(args: LLMGenerateJsonArgs<T>, nudge: boolean): Promise<T> {
+    const res = await fetchWithBackoff(
+      `${base}/api/chat`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model,
+          stream: false,
+          format: "json",
+          options: { temperature: args.temperature ?? 0.2 },
+          messages: [
+            { role: "system", content: args.system },
+            { role: "user", content: args.prompt + (nudge ? JSON_RETRY_NUDGE : "") },
+          ],
+        }),
+      },
+      { ...LLM_BACKOFF, ...deps },
+    );
+    if (!res.ok) return throwHttpError("Ollama", res);
     const json = (await res.json()) as OllamaChatResponse;
-    const text = json.message?.content?.trim() ?? "";
-    if (!text) throw new Error("Ollama returned empty content");
-    const parsed: unknown = JSON.parse(text);
-    return args.schema.parse(parsed);
+    return parseModelJson("Ollama", json.message?.content?.trim() ?? "", args);
   }
 
   return {
     name: "ollama",
     model,
     isMock: false,
-    async generateJson<T>(args: LLMGenerateJsonArgs<T>): Promise<T> {
-      try {
-        return (await call(args as LLMGenerateJsonArgs<unknown>, false)) as T;
-      } catch {
-        return (await call(args as LLMGenerateJsonArgs<unknown>, true)) as T;
-      }
-    },
+    generateJson: (args) => withJsonRetry((nudge) => call(args, nudge)),
   };
 }
