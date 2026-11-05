@@ -33,6 +33,8 @@ tests/              unit (vitest), rls (vitest vs local supabase), e2e (playwrig
 See migration for exact DDL. Key identity rules:
 - `papers` is canonical and shared: dedupe by `arxiv_id` (normalized, no version) or `pdf_sha256`.
 - `group_papers` puts a paper into a group library. Annotations, comments, and reviews reference `(group_id, paper_id)` via a composite FK, so they always belong to one group's copy.
+- Library search uses the generated `papers.search_tsv` index with an escaped substring fallback and optional group tag filter. `search_group_library`, `library_counts`, and `group_dashboard` are security-invoker RPCs, so RLS continues to filter non-member rows and private annotations.
+- Library counts are batch-loaded by `library_counts`; the dashboard gets stats, recently annotated paper IDs, and activity from one `group_dashboard` call, then resolves only the recent and annotated library entries it needs. `search_tsv` is internal and is not included in API paper mappings.
 - Citation intelligence (`paper_references`, `citation_contexts`, `ai_summaries`, `paper_texts`) is per canonical paper and readable by anyone who can read the paper. `external_works` is shared metadata.
 - Comments: one level of threading; `group_id/paper_id` denormalized by trigger; soft delete (body cleared).
 - Immutable on update (enforced by triggers): annotation anchor/quote/page/group/paper/author; comment parent/annotation/author; review group/paper/author; group_paper ids/added_by.

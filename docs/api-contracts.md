@@ -9,7 +9,7 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/groups` | `CreateGroupRequest` | 201 `CreateGroupResponse` | RPC `create_group` |
 | POST | `/api/groups/join` | `JoinGroupRequest` | `JoinGroupResponse` | 404 invalid code; idempotent |
 | GET | `/api/groups/:gid` | — | `GetGroupResponse` | |
-| GET | `/api/groups/:gid/papers` | query `ListLibraryQuery` | `ListLibraryResponse` | ILIKE on title/authors/abstract |
+| GET | `/api/groups/:gid/papers` | query `ListLibraryQuery` | `ListLibraryResponse` | ranked full-text search with escaped substring fallback across title/authors/abstract; optional tag filter; internal search index is not returned |
 | POST | `/api/groups/:gid/papers/arxiv` | `ImportArxivRequest` | 201 `ImportPaperResponse` | dedupe by arxivId; 409 if already in this group; enqueues citation processing |
 | POST | `/api/groups/:gid/papers/upload` | multipart `file` + `metadata` (`UploadPaperMetadata` JSON) | 201 `ImportPaperResponse` | PDF magic bytes checked; ≤ 20 MiB; dedupe by sha256; enqueues citation processing |
 | PATCH | `/api/groups/:gid/papers/:pid` | `UpdateLibraryPaperRequest` | `{ paper: LibraryPaper }` | tags |
@@ -30,7 +30,7 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/papers/:pid/citations/:refId/explain` | `ExplainCitationRequest` | `ExplainCitationResponse` | cached-or-generate; `unavailable` when unresolved/no context |
 | POST | `/api/papers/:pid/summary` | `PaperSummaryRequest` | `PaperSummaryResponse` | full-text grounded when available |
 | POST | `/api/papers/:pid/ask` | `AskPaperRequest` | `AskPaperResponse` | Q&A grounded in the paper (full text when available, from the cached `paper_texts`); evidence = verbatim quotes with pageIndex; `notFoundInPaper` instead of guessing; not cached |
-| GET | `/api/groups/:gid/dashboard` | — | `DashboardResponse` | |
+| GET | `/api/groups/:gid/dashboard` | — | `DashboardResponse` | RLS-aware dashboard RPC; response shape unchanged |
 
 Realtime contract: `src/contracts/realtime.ts`. Server interfaces for AI: `LLMProvider`, `WorkInput`, `CitationInput` in `src/contracts/ai.ts`.
 
