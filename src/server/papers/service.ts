@@ -48,14 +48,25 @@ export interface LibraryEntry {
 export async function fetchLibraryEntries(
   supabase: SupabaseClient,
   groupId: string,
+  opts: { paperIds?: string[]; limit?: number } = {},
 ): Promise<LibraryEntry[]> {
-  const { data, error } = await supabase
+  if (opts.paperIds?.length === 0) {
+    return [];
+  }
+
+  let query = supabase
     .from("group_papers")
     .select(
       "group_id, paper_id, added_by, tags, added_at, papers!inner(*)",
     )
-    .eq("group_id", groupId)
-    .order("added_at", { ascending: false });
+    .eq("group_id", groupId);
+  if (opts.paperIds) {
+    query = query.in("paper_id", opts.paperIds);
+  }
+  if (opts.limit !== undefined) {
+    query = query.limit(opts.limit);
+  }
+  const { data, error } = await query.order("added_at", { ascending: false });
   if (error) {
     throw internal(`Library lookup failed: ${error.message}`);
   }
@@ -84,26 +95,18 @@ async function fetchLibraryCounts(
   if (paperIds.length === 0) {
     return { annotations, reviews };
   }
-  const [{ data: aRows, error: aError }, { data: rRows, error: rError }] =
-    await Promise.all([
-      supabase
-        .from("annotations")
-        .select("paper_id")
-        .eq("group_id", groupId)
-        .in("paper_id", paperIds),
-      supabase
-        .from("paper_reviews")
-        .select("paper_id")
-        .eq("group_id", groupId)
-        .in("paper_id", paperIds),
-    ]);
-  if (aError) throw internal(`Annotation count failed: ${aError.message}`);
-  if (rError) throw internal(`Review count failed: ${rError.message}`);
-  for (const row of (aRows ?? []) as { paper_id: string }[]) {
-    annotations.set(row.paper_id, (annotations.get(row.paper_id) ?? 0) + 1);
-  }
-  for (const row of (rRows ?? []) as { paper_id: string }[]) {
-    reviews.set(row.paper_id, (reviews.get(row.paper_id) ?? 0) + 1);
+  const { data, error } = await supabase.rpc("library_counts", {
+    p_group_id: groupId,
+    p_paper_ids: paperIds,
+  });
+  if (error) throw internal(`Library count failed: ${error.message}`);
+  for (const row of (data ?? []) as {
+    paper_id: string;
+    annotations: number;
+    reviews: number;
+  }[]) {
+    annotations.set(row.paper_id, Number(row.annotations));
+    reviews.set(row.paper_id, Number(row.reviews));
   }
   return { annotations, reviews };
 }
@@ -169,18 +172,31 @@ export async function listLibrary(
   query: z.infer<typeof ListLibraryQuery>,
 ): Promise<LibraryPaper[]> {
   await requireGroupMember(supabase, groupId, userId);
-  let entries = await fetchLibraryEntries(supabase, groupId);
-  const q = query.q?.toLowerCase();
-  if (q) {
-    entries = entries.filter(
-      ({ paper }) =>
-        paper.title.toLowerCase().includes(q) ||
-        (paper.abstract ?? "").toLowerCase().includes(q) ||
-        paper.authors.some((a) => a.toLowerCase().includes(q)),
+  let entries: LibraryEntry[];
+  if (query.q !== undefined) {
+    const { data, error } = await supabase.rpc("search_group_library", {
+      p_group_id: groupId,
+      p_q: query.q,
+      p_tag: query.tag ?? null,
+    });
+    if (error) {
+      throw internal(`Library search failed: ${error.message}`);
+    }
+    const ranked = (data ?? []) as { paper_id: string; rank: number }[];
+    const fetched = await fetchLibraryEntries(supabase, groupId, {
+      paperIds: ranked.map((row) => row.paper_id),
+    });
+    const entriesByPaperId = new Map(
+      fetched.map((entry) => [entry.paper.id, entry]),
     );
-  }
-  if (query.tag) {
-    entries = entries.filter(({ link }) => link.tags.includes(query.tag!));
+    entries = ranked
+      .map((row) => entriesByPaperId.get(row.paper_id))
+      .filter((entry): entry is LibraryEntry => entry !== undefined);
+  } else {
+    entries = await fetchLibraryEntries(supabase, groupId);
+    if (query.tag) {
+      entries = entries.filter(({ link }) => link.tags.includes(query.tag!));
+    }
   }
   return toLibraryPapers(supabase, entries);
 }
