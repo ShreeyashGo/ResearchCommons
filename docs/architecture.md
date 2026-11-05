@@ -66,6 +66,7 @@ Triggered after import through the durable jobs queue; idempotent (deletes and r
 4. Resolve: arXiv papers → Semantic Scholar `/graph/v1/paper/arXiv:{id}/references` list, match by normalized-title similarity (≥ 0.85, year ±1 if known); else OpenAlex title search with the same thresholds. Below threshold → `unresolved`; multiple close candidates → `ambiguous`. Never fabricate.
 5. Contexts: sentence + paragraph around each marker, with marker rects.
 6. AI is lazy (on click) and cached; see §8.
+7. After successful processing, uploaded papers are best-effort enriched from OpenAlex and Crossref, with a first-page abstract fallback. OpenAlex abstracts are rebuilt from its inverted index, and existing metadata is preserved.
 
 ## 8. AI layer (`src/server/ai`)
 - `LLMProvider` (contracts/ai.ts) with `mock` (default), `gemini`, `ollama`. Selected by `AI_PROVIDER`.

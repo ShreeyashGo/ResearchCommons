@@ -13,6 +13,7 @@ import {
   claimPaperProcessing,
   runClaimedPaperProcessing,
 } from "@/server/citations/pipeline";
+import { enrichPaperMetadata } from "@/server/papers/enrich";
 
 type JobHandler = (payload: Record<string, unknown>) => Promise<void>;
 
@@ -39,6 +40,9 @@ const defaultDeps: WorkerDeps = {
         throw new Error("paper is already being processed");
       }
       await runClaimedPaperProcessing(paperId);
+      await enrichPaperMetadata(paperId).catch((error: unknown) => {
+        console.warn(`[enrich] metadata enrichment failed for ${paperId}:`, error);
+      });
     },
   },
 };

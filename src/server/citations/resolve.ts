@@ -8,7 +8,7 @@ import type { BibEntry, ExternalWorkInsert, ResolvedReference } from "./types";
 const S2_FIELDS =
   "title,authors,year,abstract,externalIds,venue,url,openAccessPdf,paperId,isOpenAccess";
 const OA_SELECT =
-  "id,display_name,publication_year,doi,authorships,primary_location,open_access,ids";
+  "id,display_name,publication_year,doi,authorships,primary_location,open_access,ids,abstract_inverted_index";
 /** Cap on external-service request latency (S2 / OpenAlex / arXiv metadata). */
 const EXTERNAL_TIMEOUT_MS = 15_000;
 /** Hard stop on S2 reference pagination (page size is 1000). */
@@ -107,6 +107,7 @@ export interface OaWork {
   display_name?: string;
   publication_year?: number | null;
   doi?: string | null;
+  abstract_inverted_index?: Record<string, number[]> | null;
   authorships?: OaAuthorship[];
   primary_location?: { landing_page_url?: string | null; source?: { display_name?: string | null } | null } | null;
   open_access?: { is_oa?: boolean; oa_url?: string | null };
@@ -116,7 +117,26 @@ export interface OaSearchResponse {
   results?: OaWork[];
 }
 
-function oaWorkToWork(w: OaWork): ExternalWorkInsert | null {
+export function rebuildAbstract(
+  index: Record<string, number[]> | null | undefined,
+): string | null {
+  if (!index) return null;
+  const words: string[] = [];
+  for (const [word, positions] of Object.entries(index)) {
+    for (const position of positions) {
+      if (!Number.isInteger(position) || position < 0) continue;
+      words[position] = word;
+    }
+  }
+  const abstract = words
+    .filter((word) => word)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return abstract || null;
+}
+
+export function oaWorkToWork(w: OaWork): ExternalWorkInsert | null {
   if (!w.id || !w.display_name) return null;
   const arxivUrl = w.ids?.arxiv;
   const arxivId = arxivUrl
@@ -131,12 +151,35 @@ function oaWorkToWork(w: OaWork): ExternalWorkInsert | null {
     authors: (w.authorships ?? []).map((a) => a.author?.display_name ?? "").filter(Boolean),
     year: w.publication_year ?? null,
     venue: w.primary_location?.source?.display_name ?? null,
-    abstract: null, // OpenAlex returns inverted indexes; not fetched for MVP
+    abstract: rebuildAbstract(w.abstract_inverted_index),
     doi: w.doi ?? w.ids?.doi ?? null,
     arxivId: arxivIdBase,
     url: w.primary_location?.landing_page_url ?? w.id,
     openAccessPdfUrl: w.open_access?.oa_url ?? null,
   };
+}
+
+export async function fetchOpenAlexByDoi(
+  doi: string,
+  opts: { mailto?: string; fetchImpl?: FetchLike } = {},
+): Promise<ExternalWorkInsert | null> {
+  const url = new URL(
+    `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`,
+  );
+  url.searchParams.set("select", OA_SELECT);
+  if (opts.mailto) url.searchParams.set("mailto", opts.mailto);
+
+  try {
+    const json = (await fetchJsonWithBackoff(
+      url.toString(),
+      { headers: { accept: "application/json" } },
+      opts.fetchImpl,
+    )) as OaWork;
+    return oaWorkToWork(json);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("HTTP 404")) return null;
+    throw error;
+  }
 }
 
 export async function searchOpenAlex(
