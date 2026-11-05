@@ -10,11 +10,11 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/groups/join` | `JoinGroupRequest` | `JoinGroupResponse` | 404 invalid code; idempotent |
 | GET | `/api/groups/:gid` | — | `GetGroupResponse` | |
 | GET | `/api/groups/:gid/papers` | query `ListLibraryQuery` | `ListLibraryResponse` | ILIKE on title/authors/abstract |
-| POST | `/api/groups/:gid/papers/arxiv` | `ImportArxivRequest` | 201 `ImportPaperResponse` | dedupe by arxivId; 409 if already in this group; starts pipeline |
-| POST | `/api/groups/:gid/papers/upload` | multipart `file` + `metadata` (`UploadPaperMetadata` JSON) | 201 `ImportPaperResponse` | PDF magic bytes checked; ≤ 20 MiB; dedupe by sha256 |
+| POST | `/api/groups/:gid/papers/arxiv` | `ImportArxivRequest` | 201 `ImportPaperResponse` | dedupe by arxivId; 409 if already in this group; enqueues citation processing |
+| POST | `/api/groups/:gid/papers/upload` | multipart `file` + `metadata` (`UploadPaperMetadata` JSON) | 201 `ImportPaperResponse` | PDF magic bytes checked; ≤ 20 MiB; dedupe by sha256; enqueues citation processing |
 | PATCH | `/api/groups/:gid/papers/:pid` | `UpdateLibraryPaperRequest` | `{ paper: LibraryPaper }` | tags |
 | DELETE | `/api/groups/:gid/papers/:pid` | — | 204 | owner or adder; unlinks only |
-| GET | `/api/papers/:pid?groupId=` | — | `GetPaperResponse` | signed PDF URL, 10 min |
+| GET | `/api/papers/:pid?groupId=` | — | `GetPaperResponse` | signed PDF URL, 10 min; pending/processing reads opportunistically drain one job |
 | GET | `/api/groups/:gid/papers/:pid/annotations` | — | `ListAnnotationsResponse` | own private + group |
 | POST | `/api/groups/:gid/papers/:pid/annotations` | `CreateAnnotationRequest` | 201 `AnnotationResponse` | anchor.pageIndex must equal page_index; optional first comment |
 | PATCH | `/api/annotations/:aid` | `UpdateAnnotationRequest` | `AnnotationResponse` | author only |
@@ -26,7 +26,7 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | PUT | `/api/groups/:gid/papers/:pid/reviews/mine` | `ReviewInput` | `ReviewResponse` | upsert |
 | DELETE | `/api/groups/:gid/papers/:pid/reviews/mine` | — | 204 | |
 | GET | `/api/papers/:pid/citations` | — | `GetCitationsResponse` | requires `can_read_paper` |
-| POST | `/api/papers/:pid/process` | — | 202 `ProcessPaperResponse` | idempotent re-run; 409 if processing |
+| POST | `/api/papers/:pid/process` | — | 202 `{ processingStatus: "pending" }` | queues an idempotent re-run; 409 if a job is already active |
 | POST | `/api/papers/:pid/citations/:refId/explain` | `ExplainCitationRequest` | `ExplainCitationResponse` | cached-or-generate; `unavailable` when unresolved/no context |
 | POST | `/api/papers/:pid/summary` | `PaperSummaryRequest` | `PaperSummaryResponse` | full-text grounded when available |
 | POST | `/api/papers/:pid/ask` | `AskPaperRequest` | `AskPaperResponse` | Q&A grounded in the paper (full text when available, from the cached `paper_texts`); evidence = verbatim quotes with pageIndex; `notFoundInPaper` instead of guessing; not cached |

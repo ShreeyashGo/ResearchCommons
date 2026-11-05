@@ -59,7 +59,7 @@ Helpers (SECURITY DEFINER, `search_path=''`): `is_group_member`, `is_group_owner
 - Realtime: new annotations/comments from others appear live with a subtle pulse.
 
 ## 7. Citation intelligence pipeline (`src/server/citations`)
-Triggered after import with Next `after()`; idempotent (deletes and rewrites references/contexts for the paper); status in `papers.processing_status`.
+Triggered after import through the durable jobs queue; idempotent (deletes and rewrites references/contexts for the paper); status in `papers.processing_status`.
 1. Extract per-page text items with positions (pdfjs-dist, Node legacy build). Fixtures: `fixtures/papers/<arxivId>/`.
 2. In-text markers: (a) PDF link annotations whose destination falls in the bibliography (`cite.*` named dests from hyperref); (b) regex fallback for numeric and author-year markers.
 3. Bibliography: locate References/Bibliography heading; split entries; parse title/authors/year.
@@ -77,7 +77,10 @@ Triggered after import with Next `after()`; idempotent (deletes and rewrites ref
 ## 9. Realtime
 See `src/contracts/realtime.ts`. postgres_changes on annotations, comments, paper_reviews filtered by `paper_id`; client drops other groups' rows and refetches via API.
 
-## 10. Ownership (Phase 2)
+## 10. Jobs
+Imports enqueue durable `paper.process` jobs in Postgres. A worker claims each job under a lease, records completion, and retries failures with exponential backoff; expired leases are reclaimed, and exhausted jobs become failed. Jobs drain right after enqueue and whenever a client polls a pending/processing paper. There is no scheduled worker; a stuck job resumes the next time someone opens that paper.
+
+## 11. Ownership (Phase 2)
 | Track | Owns |
 |---|---|
 | Lead | `docs/architecture.md`, `docs/api-contracts.md`, `src/contracts/**`, initial migration, integration, merges |

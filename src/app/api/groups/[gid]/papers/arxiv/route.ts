@@ -1,6 +1,5 @@
 import { after } from "next/server";
 import { ImportArxivRequest, ImportPaperResponse } from "@/contracts/papers";
-import { startPaperProcessing } from "@/server/citations/pipeline";
 import {
   json,
   parseJson,
@@ -8,6 +7,8 @@ import {
   routeHandler,
   uuidParam,
 } from "@/server/http/handler";
+import { enqueuePaperProcessing } from "@/server/jobs/queue";
+import { drainJobs } from "@/server/jobs/worker";
 import { importArxivPaper } from "@/server/papers/service";
 
 export const POST = routeHandler<{ gid: string }>(async (req, ctx) => {
@@ -15,7 +16,21 @@ export const POST = routeHandler<{ gid: string }>(async (req, ctx) => {
   const gid = uuidParam((await ctx.params).gid);
   const input = await parseJson(req, ImportArxivRequest);
   const result = await importArxivPaper(supabase, user, gid, input);
-  after(() => startPaperProcessing(result.paperId));
+  if (
+    result.paper.processingStatus === "pending" ||
+    result.paper.processingStatus === "failed"
+  ) {
+    try {
+      await enqueuePaperProcessing(result.paperId);
+      after(() =>
+        drainJobs(1).catch((error) => {
+          console.error("[jobs] arXiv-triggered drain failed:", error);
+        }),
+      );
+    } catch (error) {
+      console.error(`[jobs] enqueue failed for ${result.paperId}:`, error);
+    }
+  }
   return json(
     ImportPaperResponse.parse({
       paper: result.paper,
