@@ -12,6 +12,7 @@ import {
   DashboardResponse,
   ExplainCitationRequest,
   ExplainCitationResponse,
+  GetAskThreadResponse,
   GetCitationsResponse,
   GetGroupResponse,
   GetPaperResponse,
@@ -185,6 +186,14 @@ export const httpApi: Api = {
     request("POST", `/api/papers/${paperId}/summary`, PaperSummaryResponse, PaperSummaryRequest.parse(req)),
   askPaper: (paperId, req: z.input<typeof AskPaperRequest>) =>
     request("POST", `/api/papers/${paperId}/ask`, AskPaperResponse, AskPaperRequest.parse(req)),
+  getAskThread: (groupId, paperId) =>
+    request(
+      "GET",
+      `/api/groups/${groupId}/papers/${paperId}/ask`,
+      GetAskThreadResponse,
+    ),
+  clearAskThread: (groupId, paperId) =>
+    requestEmpty("DELETE", `/api/groups/${groupId}/papers/${paperId}/ask`),
 
   dashboard: (groupId) => request("GET", `/api/groups/${groupId}/dashboard`, DashboardResponse),
 };

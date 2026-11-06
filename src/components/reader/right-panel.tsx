@@ -350,6 +350,7 @@ export function RightPanel({
   onSelectAnnotation,
   onRefreshReviews,
   onAsk,
+  onClearChat,
   onJumpToPage,
   summarizeBusy,
   askBusy,
@@ -368,6 +369,7 @@ export function RightPanel({
   onSelectAnnotation: (a: Annotation) => void;
   onRefreshReviews: () => void;
   onAsk: (question: string) => void;
+  onClearChat: () => void;
   onJumpToPage: (pageIndex: number) => void;
   summarizeBusy: boolean;
   askBusy: boolean;
@@ -515,6 +517,18 @@ export function RightPanel({
               Summarize this paper
             </Button>
             <AskComposer busy={askBusy} onAsk={onAsk} />
+            {aiCards.some((card) => card.kind === "ask") && !askBusy && (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  data-testid="ask-clear"
+                  onClick={onClearChat}
+                >
+                  <Trash2 size={12} /> Clear chat
+                </Button>
+              </div>
+            )}
             {aiCards.length === 0 ? (
               <EmptyState
                 icon={<Sparkles size={18} />}

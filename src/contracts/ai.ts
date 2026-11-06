@@ -75,7 +75,7 @@ export const PaperSummaryRequest = z.object({ groupId: Uuid });
 export const PaperSummaryResponse = z.object({ summary: WorkSummary, meta: AiMeta });
 
 // POST /api/papers/:pid/ask   body: AskPaperRequest
-// Q&A grounded in the paper being read (full text when extractable). Not cached or persisted (MVP).
+// Q&A grounded in the paper being read (full text when extractable); persisted per user.
 // 404 unless member + paper linked to group, or annotationId not visible to caller; 502 on invalid AI output.
 export const AskTurn = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(4000) });
 export const AskPaperRequest = z.object({
@@ -83,7 +83,7 @@ export const AskPaperRequest = z.object({
   question: z.string().trim().min(3).max(1000),
   /** Optional focus passage: the annotation's quote is added to the context. */
   annotationId: Uuid.optional(),
-  /** Client-held prior turns for follow-ups (oldest first). */
+  /** Deprecated: ignored; the server loads prior turns from the persisted thread. */
   history: z.array(AskTurn).max(6).default([]),
 });
 export type AskPaperRequest = z.infer<typeof AskPaperRequest>;
@@ -96,8 +96,25 @@ export const PaperAnswer = z.object({
   notFoundInPaper: z.boolean(),
 });
 export type PaperAnswer = z.infer<typeof PaperAnswer>;
-export const AskPaperResponse = z.object({ answer: PaperAnswer, meta: AiMeta });
+export const AskPaperResponse = z.object({
+  answer: PaperAnswer,
+  meta: AiMeta,
+  entryId: Uuid.nullable(),
+});
 export type AskPaperResponse = z.infer<typeof AskPaperResponse>;
+
+// GET /api/groups/:gid/papers/:pid/ask — my thread for this paper (oldest first, last 50)
+// DELETE /api/groups/:gid/papers/:pid/ask — clear my thread (204)
+export const AskThreadEntry = z.object({
+  id: Uuid,
+  question: z.string(),
+  annotationId: Uuid.nullable(),
+  answer: PaperAnswer,
+  meta: AiMeta,
+  createdAt: IsoDate,
+});
+export type AskThreadEntry = z.infer<typeof AskThreadEntry>;
+export const GetAskThreadResponse = z.object({ entries: z.array(AskThreadEntry) });
 
 // ---------------------------------------------------------------------------
 // Server-side interfaces (implemented in src/server/ai). Not HTTP.

@@ -6,5 +6,5 @@ export default async function ReaderPage({
   params: Promise<{ gid: string; pid: string }>;
 }) {
   const { gid, pid } = await params;
-  return <Reader groupId={gid} paperId={pid} />;
+  return <Reader key={`${gid}:${pid}`} groupId={gid} paperId={pid} />;
 }

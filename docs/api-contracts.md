@@ -35,10 +35,12 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/papers/:pid/process` | — | 202 `{ processingStatus: "pending" }` | queues an idempotent re-run; 409 if a job is already active |
 | POST | `/api/papers/:pid/citations/:refId/explain` | `ExplainCitationRequest` | `ExplainCitationResponse` | cached-or-generate; `unavailable` when unresolved/no context |
 | POST | `/api/papers/:pid/summary` | `PaperSummaryRequest` | `PaperSummaryResponse` | full-text grounded when available |
-| POST | `/api/papers/:pid/ask` | `AskPaperRequest` | `AskPaperResponse` | Q&A grounded in the paper (full text when available, from the cached `paper_texts`); evidence = verbatim quotes with pageIndex; `notFoundInPaper` instead of guessing; not cached |
+| POST | `/api/papers/:pid/ask` | `AskPaperRequest` | `AskPaperResponse` | Q&A grounded in the paper (full text when available, from the cached `paper_texts`); evidence = verbatim quotes with pageIndex; `notFoundInPaper` instead of guessing; persisted per user/group/paper |
+| GET | `/api/groups/:gid/papers/:pid/ask` | — | `GetAskThreadResponse` | current user's last 50 persisted exchanges, oldest first |
+| DELETE | `/api/groups/:gid/papers/:pid/ask` | — | 204 | clears the current user's thread |
 | GET | `/api/groups/:gid/dashboard` | — | `DashboardResponse` | RLS-aware dashboard RPC; response shape unchanged |
 
-The ask, summary, citation-explain, upload, arXiv-import, and process endpoints may return 429 `rate_limited` with `details.retryAfter` and a matching `Retry-After` header.
+The `POST /api/papers/:pid/ask`, summary, citation-explain, upload, arXiv-import, and process endpoints may return 429 `rate_limited` with `details.retryAfter` and a matching `Retry-After` header. Ask-thread GET and DELETE endpoints are not rate-limited.
 
 Realtime contract: `src/contracts/realtime.ts`. Server interfaces for AI: `LLMProvider`, `WorkInput`, `CitationInput` in `src/contracts/ai.ts`.
 

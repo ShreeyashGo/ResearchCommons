@@ -16,6 +16,9 @@ import type {
 } from "@/contracts";
 import {
   AskPaperRequest,
+  AskPaperResponse,
+  AskThreadEntry,
+  GetAskThreadResponse,
   LeaveGroupResponse,
   ReviewInput,
   RotateInviteResponse,
@@ -734,28 +737,51 @@ export const mockApi: Api = {
     const paper = [...s.papers.values()].find((p) => p.id === paperId);
     if (!paper) throw new ApiClientError(404, { error: { code: "not_found", message: "Paper not found" } }, "not found");
     const body = AskPaperRequest.parse(req);
-    return {
-      answer: {
-        answer: `Mock AI answer to "${body.question.slice(0, 120)}": The Transformer uses multi-head self-attention to model dependencies between all positions in parallel, replacing recurrence entirely.`,
-        evidence: [
-          {
-            pageIndex: 0,
-            quote:
-              "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
-          },
-        ],
-        grounding: "full_text" as const,
-        notFoundInPaper: false,
-      },
-      meta: {
-        provider: "mock",
-        model: "mock-v1",
-        isMock: true,
-        promptVersion: "ask-v1",
-        cached: false,
-        generatedAt: new Date().toISOString(),
-      },
+    const answer = {
+      answer: `Mock AI answer to "${body.question.slice(0, 120)}": The Transformer uses multi-head self-attention to model dependencies between all positions in parallel, replacing recurrence entirely.`,
+      evidence: [
+        {
+          pageIndex: 0,
+          quote:
+            "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+        },
+      ],
+      grounding: "full_text" as const,
+      notFoundInPaper: false,
     };
+    const meta = {
+      provider: "mock",
+      model: "mock-v1",
+      isMock: true,
+      promptVersion: "ask-v1",
+      cached: false,
+      generatedAt: new Date().toISOString(),
+    };
+    const entry = AskThreadEntry.parse({
+      id: uid(),
+      question: body.question,
+      annotationId: body.annotationId ?? null,
+      answer,
+      meta,
+      createdAt: meta.generatedAt,
+    });
+    const key = `${body.groupId}:${paperId}`;
+    const entries = s.askThreads.get(key) ?? [];
+    entries.push(entry);
+    s.askThreads.set(key, entries);
+    return AskPaperResponse.parse({ answer, meta, entryId: entry.id });
+  },
+
+  async getAskThread(groupId, paperId) {
+    await sleep();
+    return GetAskThreadResponse.parse({
+      entries: store().askThreads.get(`${groupId}:${paperId}`) ?? [],
+    });
+  },
+
+  async clearAskThread(groupId, paperId) {
+    await sleep();
+    store().askThreads.delete(`${groupId}:${paperId}`);
   },
 
   async dashboard(groupId) {

@@ -93,4 +93,30 @@ describe("API_MOCK flag", () => {
     const detail = await api.getGroup(group.id);
     expect(detail.group.members.find((member) => member.id === MOCK_USER.id)?.role).toBe("member");
   });
+
+  it("persists and clears mock Ask threads", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCK", "1");
+    const { api } = await import("@/lib/client/api");
+    const { groups } = await api.listGroups();
+    const group = groups.find((entry) => entry.myRole === "owner");
+    if (!group) throw new Error("Expected an owner mock group.");
+    const { papers } = await api.listLibrary(group.id, {});
+    const paper = papers[0];
+    if (!paper) throw new Error("Expected a paper in the owner mock group.");
+
+    const result = await api.askPaper(paper.id, {
+      groupId: group.id,
+      question: "What is the main idea?",
+    });
+    expect(result.entryId).toBeTruthy();
+    const thread = await api.getAskThread(group.id, paper.id);
+    expect(thread.entries).toHaveLength(1);
+    expect(thread.entries[0]).toMatchObject({
+      id: result.entryId,
+      question: "What is the main idea?",
+    });
+
+    await api.clearAskThread(group.id, paper.id);
+    expect((await api.getAskThread(group.id, paper.id)).entries).toEqual([]);
+  });
 });
