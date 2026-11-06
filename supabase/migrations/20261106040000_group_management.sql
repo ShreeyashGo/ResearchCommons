@@ -28,6 +28,7 @@ begin
   if (select auth.uid()) is null then
     raise exception 'not authenticated' using errcode = '28000';
   end if;
+  perform 1 from public.research_groups where id = p_group_id for update;
   if not public.is_group_owner(p_group_id) then
     raise exception 'only group owners can do that' using errcode = '42501';
   end if;
@@ -51,10 +52,10 @@ begin
   if (select auth.uid()) is null then
     raise exception 'not authenticated' using errcode = '28000';
   end if;
+  perform 1 from public.research_groups where id = p_group_id for update;
   if not public.is_group_owner(p_group_id) then
     raise exception 'only group owners can do that' using errcode = '42501';
   end if;
-  perform 1 from public.group_memberships where group_id = p_group_id for update;
   select role into v_current from public.group_memberships
    where group_id = p_group_id and user_id = p_user_id;
   if not found then
@@ -81,7 +82,7 @@ begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '28000';
   end if;
-  perform 1 from public.group_memberships where group_id = p_group_id for update;
+  perform 1 from public.research_groups where id = p_group_id for update;
   select role into v_role from public.group_memberships
    where group_id = p_group_id and user_id = v_uid;
   if not found then
@@ -99,6 +100,28 @@ begin
   end if;
   delete from public.group_memberships where group_id = p_group_id and user_id = v_uid;
   return 'left';
+end $$;
+
+-- Share-lock the group row so a concurrent last-member leave_group (which takes
+-- FOR UPDATE on it) either finishes first or waits for this join to commit.
+create or replace function public.join_group(p_invite_code text)
+returns public.research_groups language plpgsql security definer set search_path = '' as $$
+declare
+  g public.research_groups;
+begin
+  if (select auth.uid()) is null then
+    raise exception 'not authenticated' using errcode = '28000';
+  end if;
+  select * into g from public.research_groups
+   where invite_code = lower(trim(p_invite_code))
+   for share;
+  if not found then
+    raise exception 'invalid invite code' using errcode = 'P0002';
+  end if;
+  insert into public.group_memberships (group_id, user_id, role)
+  values (g.id, (select auth.uid()), 'member')
+  on conflict (group_id, user_id) do nothing;
+  return g;
 end $$;
 
 revoke all on function public.rotate_invite_code(uuid),
