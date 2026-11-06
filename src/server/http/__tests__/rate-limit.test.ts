@@ -20,10 +20,10 @@ afterEach(() => {
 });
 
 describe("enforceRateLimit", () => {
-  it("returns default limits in minute-then-day order", () => {
+  it("returns default limits in day-then-minute order", () => {
     expect(rateLimitsFor("import", env({}))).toEqual([
-      { window: "min", limit: 10 },
       { window: "day", limit: 100 },
+      { window: "min", limit: 10 },
     ]);
   });
 
@@ -33,14 +33,14 @@ describe("enforceRateLimit", () => {
     await expect(enforceRateLimit(supabase, "ask")).resolves.toBeUndefined();
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc).toHaveBeenNthCalledWith(1, "hit_rate_limit", {
-      p_bucket: "ask:min",
-      p_limit: 20,
-      p_window_seconds: 60,
-    });
-    expect(rpc).toHaveBeenNthCalledWith(2, "hit_rate_limit", {
       p_bucket: "ask:day",
       p_limit: 200,
       p_window_seconds: 86_400,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "hit_rate_limit", {
+      p_bucket: "ask:min",
+      p_limit: 20,
+      p_window_seconds: 60,
     });
   });
 
@@ -58,7 +58,7 @@ describe("enforceRateLimit", () => {
     });
   });
 
-  it("does not check the day window after the minute window denies", async () => {
+  it("does not check the minute window after the day window denies", async () => {
     const { supabase, rpc } = fakeSupabase();
     rpc.mockResolvedValueOnce({
       data: [{ allowed: false, retry_after: 12 }],
@@ -69,6 +69,11 @@ describe("enforceRateLimit", () => {
       HttpError,
     );
     expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("hit_rate_limit", {
+      p_bucket: "ask:day",
+      p_limit: 200,
+      p_window_seconds: 86_400,
+    });
   });
 
   it("uses environment overrides and can add a default-absent window", async () => {
@@ -84,14 +89,14 @@ describe("enforceRateLimit", () => {
     );
 
     expect(rpc).toHaveBeenNthCalledWith(1, "hit_rate_limit", {
-      p_bucket: "summary:min",
-      p_limit: 8,
-      p_window_seconds: 60,
-    });
-    expect(rpc).toHaveBeenNthCalledWith(2, "hit_rate_limit", {
       p_bucket: "summary:day",
       p_limit: 50,
       p_window_seconds: 86_400,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, "hit_rate_limit", {
+      p_bucket: "summary:min",
+      p_limit: 8,
+      p_window_seconds: 60,
     });
   });
 

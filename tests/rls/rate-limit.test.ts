@@ -77,17 +77,17 @@ describe.skipIf(!rlsTestsEnabled)("rate-limit RLS and RPC", () => {
 
   it("limits each user independently and returns a retry delay", async () => {
     const first = await user(0).client.rpc("hit_rate_limit", {
-      p_bucket: "t:min",
+      p_bucket: "ask:min",
       p_limit: 2,
       p_window_seconds: 60,
     });
     const second = await user(0).client.rpc("hit_rate_limit", {
-      p_bucket: "t:min",
+      p_bucket: "ask:min",
       p_limit: 2,
       p_window_seconds: 60,
     });
     const third = await user(0).client.rpc("hit_rate_limit", {
-      p_bucket: "t:min",
+      p_bucket: "ask:min",
       p_limit: 2,
       p_window_seconds: 60,
     });
@@ -105,7 +105,7 @@ describe.skipIf(!rlsTestsEnabled)("rate-limit RLS and RPC", () => {
     expect(denied.retry_after).toBeLessThanOrEqual(60);
 
     const otherUser = await user(1).client.rpc("hit_rate_limit", {
-      p_bucket: "t:min",
+      p_bucket: "ask:min",
       p_limit: 2,
       p_window_seconds: 60,
     });
@@ -116,7 +116,7 @@ describe.skipIf(!rlsTestsEnabled)("rate-limit RLS and RPC", () => {
   it("rejects anonymous RPC calls", async () => {
     if (!anonymous) throw new Error("Anonymous client is not initialized.");
     const { error } = await anonymous.rpc("hit_rate_limit", {
-      p_bucket: "t:anon",
+      p_bucket: "ask:min",
       p_limit: 2,
       p_window_seconds: 60,
     });
@@ -129,7 +129,7 @@ describe.skipIf(!rlsTestsEnabled)("rate-limit RLS and RPC", () => {
     expect(read.error !== null || (read.data ?? []).length === 0).toBe(true);
 
     const insert = await client.from("rate_limits").insert({
-      bucket: "direct",
+      bucket: "ask:min",
       user_id: user(0).id,
       window_start: new Date().toISOString(),
       count: 1,
@@ -137,12 +137,74 @@ describe.skipIf(!rlsTestsEnabled)("rate-limit RLS and RPC", () => {
     expect(insert.error).not.toBeNull();
   });
 
+  it("rejects an unknown bucket", async () => {
+    const { error } = await user(0).client.rpc("hit_rate_limit", {
+      p_bucket: "t:min",
+      p_limit: 2,
+      p_window_seconds: 60,
+    });
+    expect(error).not.toBeNull();
+  });
+
+  it("rejects a window length that does not match the bucket", async () => {
+    const day = await user(0).client.rpc("hit_rate_limit", {
+      p_bucket: "ask:day",
+      p_limit: 2,
+      p_window_seconds: 1,
+    });
+    const minute = await user(0).client.rpc("hit_rate_limit", {
+      p_bucket: "ask:min",
+      p_limit: 2,
+      p_window_seconds: 86_400,
+    });
+    expect(day.error).not.toBeNull();
+    expect(minute.error).not.toBeNull();
+  });
+
   it("rejects a zero limit", async () => {
     const { error } = await user(0).client.rpc("hit_rate_limit", {
-      p_bucket: "t:invalid",
+      p_bucket: "ask:min",
       p_limit: 0,
       p_window_seconds: 60,
     });
     expect(error).not.toBeNull();
+  });
+
+  it("keeps the daily counter when incrementing the minute bucket", async () => {
+    if (!admin) throw new Error("Service client is not initialized.");
+    const service = admin;
+    const userId = user(0).id;
+    const dayStart = new Date(
+      Math.floor(Date.now() / 86_400_000) * 86_400_000,
+    ).toISOString();
+    const { error: insertError } = await service.from("rate_limits").insert({
+      bucket: "ask:day",
+      user_id: userId,
+      window_start: dayStart,
+      count: 7,
+    });
+    if (insertError) throw insertError;
+
+    const readDailyCount = async () => {
+      const { data, error } = await service
+        .from("rate_limits")
+        .select("count")
+        .eq("bucket", "ask:day")
+        .eq("user_id", userId)
+        .eq("window_start", dayStart)
+        .single();
+      if (error) throw error;
+      return data.count;
+    };
+    const before = await readDailyCount();
+
+    const { data, error } = await user(0).client.rpc("hit_rate_limit", {
+      p_bucket: "ask:min",
+      p_limit: 5,
+      p_window_seconds: 60,
+    });
+    expect(error).toBeNull();
+    expect((data?.[0] as { allowed: boolean }).allowed).toBe(true);
+    expect(await readDailyCount()).toBe(before);
   });
 });

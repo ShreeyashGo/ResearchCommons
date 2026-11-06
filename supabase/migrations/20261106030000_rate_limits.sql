@@ -22,11 +22,15 @@ declare
   v_uid uuid := auth.uid();
   v_window timestamptz;
   v_count int;
+  v_expected_window int;
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '28000';
   end if;
-  if p_limit < 1 or p_window_seconds < 1 then
+  v_expected_window := case pg_catalog.split_part(p_bucket, ':', 2) when 'min' then 60 else 86400 end;
+  if p_limit < 1
+     or p_bucket !~ '^(ask|summary|explain|import|process):(min|day)$'
+     or p_window_seconds <> v_expected_window then
     raise exception 'invalid rate limit' using errcode = '22023';
   end if;
 

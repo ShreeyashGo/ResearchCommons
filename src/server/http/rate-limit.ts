@@ -23,7 +23,7 @@ export function rateLimitsFor(
   const limits: Partial<Record<RateWindow, number>> = {
     ...DEFAULTS[bucket],
   };
-  for (const window of ["min", "day"] as const) {
+  for (const window of ["day", "min"] as const) {
     const value = env[
       `RATE_LIMIT_${bucket.toUpperCase()}_PER_${window.toUpperCase()}`
     ]?.trim();
@@ -32,7 +32,7 @@ export function rateLimitsFor(
     if (Number.isSafeInteger(limit)) limits[window] = limit;
   }
 
-  return (["min", "day"] as const).flatMap((window) => {
+  return (["day", "min"] as const).flatMap((window) => {
     const limit = limits[window];
     return limit === undefined || limit === 0 ? [] : [{ window, limit }];
   });
