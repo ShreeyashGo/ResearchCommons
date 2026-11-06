@@ -28,6 +28,7 @@ tests/              unit (vitest), rls (vitest vs local supabase), e2e (playwrig
 2. Route handlers use `createUserClient()` so RLS applies. `createAdminClient()` is allowed only in: storage (upload/sign), canonical paper upsert + `group_papers` link, citation pipeline writes, AI cache writes. Each admin call must be preceded by an authorization check using the user client (`is_group_member` / `can_read_paper`).
 3. Responses are camelCase API shapes from `src/contracts`; DB rows are snake_case and never returned raw.
 4. Errors: `{ error: { code, message, details? } }` with status from `HTTP_STATUS`.
+5. Expensive AI, import, and reprocess actions use per-user fixed-window limits through `hit_rate_limit`; RPC failures fail open.
 
 ## 3. Data model
 See migration for exact DDL. Key identity rules:

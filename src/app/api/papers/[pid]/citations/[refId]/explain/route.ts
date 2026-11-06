@@ -3,6 +3,7 @@ import { AiOutputError, explainCitationForReference } from "@/server/ai/explain"
 import { upstreamFailed } from "@/server/http/errors";
 import { json, parseJson, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
 import { requireGroupPaperAccess } from "@/server/citations/http";
+import { enforceRateLimit } from "@/server/http/rate-limit";
 
 /**
  * POST /api/papers/:pid/citations/:refId/explain — cached-or-generate explanation
@@ -17,6 +18,7 @@ export const POST = routeHandler<{ pid: string; refId: string }>(async (req, ctx
 
   const { supabase } = await requireUser();
   await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
+  await enforceRateLimit(supabase, "explain");
 
   let result;
   try {

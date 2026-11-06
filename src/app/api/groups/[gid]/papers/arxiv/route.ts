@@ -7,6 +7,8 @@ import {
   routeHandler,
   uuidParam,
 } from "@/server/http/handler";
+import { enforceRateLimit } from "@/server/http/rate-limit";
+import { requireGroupMember } from "@/server/groups/service";
 import { enqueuePaperProcessing } from "@/server/jobs/queue";
 import { drainJobs } from "@/server/jobs/worker";
 import { importArxivPaper } from "@/server/papers/service";
@@ -14,6 +16,8 @@ import { importArxivPaper } from "@/server/papers/service";
 export const POST = routeHandler<{ gid: string }>(async (req, ctx) => {
   const { supabase, user } = await requireUser();
   const gid = uuidParam((await ctx.params).gid);
+  await requireGroupMember(supabase, gid, user.id);
+  await enforceRateLimit(supabase, "import");
   const input = await parseJson(req, ImportArxivRequest);
   const result = await importArxivPaper(supabase, user, gid, input);
   if (

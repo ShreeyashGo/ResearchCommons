@@ -4,6 +4,7 @@ import { notFound, upstreamFailed } from "@/server/http/errors";
 import { json, parseJson, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
 import { summarizePaper } from "@/server/ai/summarize";
 import { requireGroupPaperAccess } from "@/server/citations/http";
+import { enforceRateLimit } from "@/server/http/rate-limit";
 
 /**
  * POST /api/papers/:pid/summary — cached-or-generate summary of the paper being
@@ -17,6 +18,7 @@ export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
 
   const { supabase } = await requireUser();
   await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
+  await enforceRateLimit(supabase, "summary");
 
   let result;
   try {
