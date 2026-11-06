@@ -88,6 +88,10 @@ Sign in to the seeded **Koala Lab** with either demo account:
 | Alice Koala | `alice@koalalab.dev` | `koala-demo-123` |
 | Bob Koala | `bob@koalalab.dev` | `koala-demo-123` |
 
+New accounts require email confirmation. Confirmation and password-reset emails use token-hash links through `/auth/confirm`, so they work across devices; `/auth/callback` remains available for PKCE code-flow links. Password resets continue to `/reset-password`. Local Supabase emails are captured by Mailpit at [http://127.0.0.1:54324](http://127.0.0.1:54324).
+
+For a hosted deployment, enable **Confirm email**, add `<site>/auth/callback` and `<site>/auth/confirm` under **Authentication → URL Configuration → Redirect URLs**, and paste `supabase/templates/confirmation.html` and `supabase/templates/recovery.html` into **Dashboard → Auth → Email Templates**. Supabase’s built-in email is free but heavily rate-limited. Custom SMTP is optional and is not configured here.
+
 Koala Lab includes two papers: **Attention Is All You Need** and **Agentic Misalignment: How LLMs Could Be Insider Threats**.
 
 Built under a hackathon timeframe, the demo runs on a deterministic mock AI provider and seeded demo data (Koala Lab, Alice and Bob). The rest is real: PDF parsing, citation resolution against Semantic Scholar/OpenAlex/arXiv, Postgres row-level security, and realtime sync. Real models are one env var away: Gemini (`AI_PROVIDER=gemini` plus `GEMINI_API_KEY`, free tier) or fully local Ollama (`AI_PROVIDER=ollama`, configurable with `OLLAMA_BASE_URL` and `OLLAMA_MODEL`) adapters are implemented behind the same interface.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_MOCK } from "./api";
+import { ApiClientError, api, API_MOCK } from "./api";
 import { createBrowserSupabaseClient } from "./supabase";
 
 export interface SessionUser {
@@ -44,21 +44,86 @@ export async function signUp(
   email: string,
   password: string,
   displayName: string,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; needsConfirmation?: boolean }> {
   if (API_MOCK) return {};
   const supabase = createBrowserSupabaseClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { display_name: displayName } },
+    options: {
+      data: { display_name: displayName },
+      emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+    },
   });
-  return { error: error?.message };
+  return {
+    error: error?.message,
+    needsConfirmation: !error && !data.session,
+  };
 }
 
 export async function signOut(): Promise<void> {
   if (API_MOCK) return;
   const supabase = createBrowserSupabaseClient();
   await supabase.auth.signOut();
+}
+
+export async function requestPasswordReset(
+  email: string,
+): Promise<{ error?: string }> {
+  if (API_MOCK) return {};
+  const { error } = await createBrowserSupabaseClient().auth.resetPasswordForEmail(
+    email,
+    {
+      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+    },
+  );
+  return { error: error?.message };
+}
+
+export async function updatePassword(
+  password: string,
+): Promise<{ error?: string }> {
+  if (API_MOCK) return {};
+  const { error } = await createBrowserSupabaseClient().auth.updateUser({
+    password,
+  });
+  return { error: error?.message };
+}
+
+export async function signOutEverywhere(): Promise<{ error?: string }> {
+  if (API_MOCK) return {};
+  const { error } = await createBrowserSupabaseClient().auth.signOut({
+    scope: "global",
+  });
+  return { error: error?.message };
+}
+
+export async function updateDisplayName(
+  name: string,
+): Promise<{ error?: string }> {
+  try {
+    const { profile } = await api.updateMe({ displayName: name });
+    if (!API_MOCK) {
+      const { error } = await createBrowserSupabaseClient().auth.updateUser({
+        data: { display_name: profile.displayName },
+      });
+      if (error) {
+        return {
+          error:
+            "Display name saved, but your session couldn't be refreshed. Sign out and back in to see it.",
+        };
+      }
+    }
+    window.dispatchEvent(new Event("rc:session-user-changed"));
+    return {};
+  } catch (error) {
+    return {
+      error:
+        error instanceof ApiClientError
+          ? error.message
+          : "Unable to update profile.",
+    };
+  }
 }
 
 export function useSessionUser(): { user: SessionUser | null; loading: boolean } {
@@ -68,11 +133,20 @@ export function useSessionUser(): { user: SessionUser | null; loading: boolean }
   });
   useEffect(() => {
     let alive = true;
-    getSessionUser().then((user) => {
-      if (alive) setState({ user, loading: false });
-    });
+    const refresh = () => {
+      void getSessionUser()
+        .then((user) => {
+          if (alive) setState({ user, loading: false });
+        })
+        .catch(() => {
+          if (alive) setState({ user: null, loading: false });
+        });
+    };
+    window.addEventListener("rc:session-user-changed", refresh);
+    refresh();
     return () => {
       alive = false;
+      window.removeEventListener("rc:session-user-changed", refresh);
     };
   }, []);
   return state;

@@ -30,6 +30,15 @@ export const MeResponse = z.object({
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
+export const UpdateProfileRequest = z.object({
+  displayName: z.string().trim().min(1).max(80),
+});
+export type UpdateProfileRequest = z.input<typeof UpdateProfileRequest>;
+export const UpdateProfileResponse = z.object({
+  profile: MeResponse.shape.profile,
+});
+export type UpdateProfileResponse = z.infer<typeof UpdateProfileResponse>;
+
 // POST /api/groups
 export const CreateGroupRequest = z.object({
   name: z.string().trim().min(1).max(120),

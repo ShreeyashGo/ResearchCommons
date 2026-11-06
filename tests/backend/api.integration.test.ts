@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { AnnotationResponse, ListAnnotationsResponse } from "@/contracts/annotations";
 import { DashboardResponse } from "@/contracts/dashboard";
 import { ListLibraryResponse } from "@/contracts/papers";
@@ -33,6 +34,7 @@ import {
   listReviews,
   upsertMyReview,
 } from "@/server/reviews/service";
+import { updateProfile } from "@/server/profile/service";
 
 const enabled = process.env.RLS_TESTS === "1";
 
@@ -118,6 +120,57 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
       if (u) await admin.auth.admin.deleteUser(u.id);
     }
   }, 30_000);
+
+  it("updates and persists the signed-in user's trimmed display name", async () => {
+    const result = await updateProfile(a.client, a.user, {
+      displayName: "  Profile A  ",
+    });
+    expect(result.profile).toEqual({
+      id: a.id,
+      displayName: "Profile A",
+      email: a.user.email ?? "",
+    });
+    const { data, error } = await admin
+      .from("profiles")
+      .select("display_name")
+      .eq("id", a.id)
+      .single();
+    expect(error).toBeNull();
+    expect(data?.display_name).toBe("Profile A");
+  });
+
+  it("rejects empty and overlong display names", async () => {
+    for (const displayName of ["", "x".repeat(81)]) {
+      await expect(
+        updateProfile(a.client, a.user, { displayName }),
+      ).rejects.toBeInstanceOf(ZodError);
+    }
+  });
+
+  it("does not let a different user update the profile", async () => {
+    const { data: before, error: beforeError } = await admin
+      .from("profiles")
+      .select("display_name")
+      .eq("id", a.id)
+      .single();
+    expect(beforeError).toBeNull();
+
+    const { data, error } = await b.client
+      .from("profiles")
+      .update({ display_name: "Unauthorized update" })
+      .eq("id", a.id)
+      .select("id");
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+
+    const { data: after, error: afterError } = await admin
+      .from("profiles")
+      .select("display_name")
+      .eq("id", a.id)
+      .single();
+    expect(afterError).toBeNull();
+    expect(after?.display_name).toBe(before?.display_name);
+  });
 
   it("creates and joins groups", async () => {
     const group = await createGroup(a.client, a.id, {
