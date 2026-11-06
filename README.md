@@ -120,7 +120,7 @@ See the [architecture](docs/architecture.md) and [API contracts](docs/api-contra
 
 - Gate: `pnpm lint && pnpm typecheck && pnpm check:secrets && pnpm test && pnpm build`.
 - The citation pipeline is tested against five real arXiv papers. **Attention Is All You Need** has 40 parsed references, 38 resolved references, and 76/76 markers linked.
-- A recorded two-user E2E exercises the shared reading flow with Alice and Bob.
+- `pnpm test:e2e:local` runs a two-user Playwright test (Alice and Bob) against local Supabase and the demo seed; CI runs it as a non-blocking `e2e` job.
 
 ## Roadmap
 

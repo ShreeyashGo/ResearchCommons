@@ -31,7 +31,7 @@ export function CitationPreview({
 
   return (
     <Popover anchor={anchor} onClose={onClose} width={330}>
-      <div className="p-3.5">
+      <div className="p-3.5" data-testid="citation-preview">
         <div className="flex items-center gap-1.5">
           <Badge tone="ai">{ctx.markerText}</Badge>
           <Badge tone={st.tone}>{st.label}</Badge>
@@ -56,7 +56,7 @@ export function CitationPreview({
         </p>
         <div className="mt-3 flex items-center gap-1.5">
           {reference && (
-            <Button size="xs" onClick={() => onExplain(reference, ctx)}>
+            <Button size="xs" data-testid="citation-explain" onClick={() => onExplain(reference, ctx)}>
               <Sparkles size={12} /> Explain citation
             </Button>
           )}

@@ -318,6 +318,8 @@ function PdfPageSlot({
     <div
       ref={elRef}
       data-page-index={index}
+      data-map-ready={map ? "true" : "false"}
+      data-testid="reader-page"
       className="pdf-page relative shrink-0 bg-white shadow-card"
       style={{
         width: Math.round(size.w * scale),
@@ -326,7 +328,7 @@ function PdfPageSlot({
       }}
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
-      <div ref={textLayerRef} className="textLayer" />
+      <div ref={textLayerRef} className="textLayer" data-testid="reader-text-layer" />
       <div className="pointer-events-none absolute inset-0">
         {map ? renderOverlay?.(handle) : null}
       </div>

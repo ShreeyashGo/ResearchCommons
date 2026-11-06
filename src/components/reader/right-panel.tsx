@@ -68,7 +68,11 @@ function GroundingChip({ grounding }: { grounding: string }) {
 function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (pageIndex: number) => void }) {
   if (card.kind === "loading") {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-ai/25 bg-ai-soft/40 px-3 py-2.5 text-[12px] text-ai">
+      <div
+        className="flex items-center gap-2 rounded-lg border border-ai/25 bg-ai-soft/40 px-3 py-2.5 text-[12px] text-ai"
+        data-testid="ai-card"
+        data-kind={card.kind}
+      >
         <Spinner size={13} /> {card.label}
       </div>
     );
@@ -76,7 +80,7 @@ function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (page
   if (card.kind === "ask") {
     const a = card.answer;
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-testid="ai-card" data-kind={card.kind}>
         <p className="ml-6 rounded-lg rounded-tr-sm border border-line bg-surface-2 px-3 py-2 text-[12px] text-ink">
           {card.question}
         </p>
@@ -112,7 +116,7 @@ function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (page
   }
   if (card.kind === "ask_error") {
     return (
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" data-testid="ai-card" data-kind={card.kind}>
         <p className="ml-6 rounded-lg rounded-tr-sm border border-line bg-surface-2 px-3 py-2 text-[12px] text-ink">
           {card.question}
         </p>
@@ -124,7 +128,7 @@ function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (page
   }
   if (card.kind === "unavailable") {
     return (
-      <div className="rounded-lg border border-line bg-surface p-3">
+      <div className="rounded-lg border border-line bg-surface p-3" data-testid="ai-card" data-kind={card.kind}>
         <div className="flex items-center gap-1.5">
           <Badge tone="warn">
             <AlertTriangle size={10} /> Explanation unavailable
@@ -146,7 +150,7 @@ function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (page
 
   if (card.kind === "summary") {
     return (
-      <div className="rounded-lg border border-ai/25 bg-ai-soft/30 p-3">
+      <div className="rounded-lg border border-ai/25 bg-ai-soft/30 p-3" data-testid="ai-card" data-kind={card.kind}>
         <div className="flex items-center justify-between">
           <AiBadge meta={card.meta} />
           <GroundingChip grounding={card.summary.grounding} />
@@ -163,7 +167,7 @@ function AiCardView({ card, onJumpToPage }: { card: AiCard; onJumpToPage?: (page
 
   const e = card.explanation;
   return (
-    <div className="rounded-lg border border-ai/25 bg-ai-soft/30 p-3">
+    <div className="rounded-lg border border-ai/25 bg-ai-soft/30 p-3" data-testid="ai-card" data-kind={card.kind}>
       <div className="flex items-center justify-between">
         <AiBadge meta={card.meta} />
         <GroundingChip grounding={e.grounding} />
@@ -313,6 +317,7 @@ function AskComposer({ busy, onAsk }: { busy: boolean; onAsk: (question: string)
       <Textarea
         rows={2}
         value={value}
+        data-testid="ask-input"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
@@ -323,7 +328,13 @@ function AskComposer({ busy, onAsk }: { busy: boolean; onAsk: (question: string)
         placeholder="Ask a question about this paper…"
         className="flex-1 resize-none text-[12px]"
       />
-      <Button size="xs" disabled={busy || question.length < 3} onClick={submit} aria-label="Ask">
+      <Button
+        size="xs"
+        disabled={busy || question.length < 3}
+        onClick={submit}
+        aria-label="Ask"
+        data-testid="ask-submit"
+      >
         {busy ? <Spinner size={12} /> : <Send size={12} />}
       </Button>
     </div>
@@ -458,6 +469,7 @@ export function RightPanel({
                 <button
                   key={a.id}
                   data-ann-id={a.id}
+                  data-testid="annotation-list-item"
                   onClick={() => onSelectAnnotation(a)}
                   className={cn(
                     "w-full rounded-lg border border-line bg-surface p-2.5 text-left hover:border-line-strong",
