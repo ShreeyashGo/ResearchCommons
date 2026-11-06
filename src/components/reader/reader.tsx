@@ -165,6 +165,32 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
     };
   }, [groupId, paperId, refreshAnnotations, refreshReviews]);
 
+  useEffect(() => {
+    let alive = true;
+    api
+      .getAskThread(groupId, paperId)
+      .then(({ entries }) => {
+        if (!alive) return;
+        const cards = entries.map((entry) => ({
+          id: `ask-${entry.id}`,
+          kind: "ask" as const,
+          question: entry.question,
+          answer: entry.answer,
+          meta: entry.meta,
+        }));
+        setAiCards((current) => {
+          const existingIds = new Set(current.map((card) => card.id));
+          return [...cards.filter((card) => !existingIds.has(card.id)), ...current];
+        });
+      })
+      .catch((error: unknown) => {
+        if (alive) console.warn("[ask-thread] load failed:", error);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [groupId, paperId]);
+
   // Processing pipeline: while the paper is pending/processing, poll
   // getPaper + getCitations every 2s; on `ready` load the PDF and citation
   // markers; on `failed` stop and surface processingError.
@@ -310,21 +336,16 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
       setPanelOpen(true);
       setTab("ai");
       setAskBusy(true);
-      // Client-held history: prior ask turns, oldest first, capped at 6.
-      const history = aiCards
-        .filter((c): c is Extract<AiCard, { kind: "ask" }> => c.kind === "ask")
-        .slice(-3)
-        .flatMap((c) => [
-          { role: "user" as const, content: c.question },
-          { role: "assistant" as const, content: c.answer.answer },
-        ]);
       const id = nextCardId();
       setAiCards((cs) => [...cs, { id, kind: "loading", label: "Asking the paper…" }]);
       try {
-        const res = await api.askPaper(paperId, { groupId, question, history });
+        const res = await api.askPaper(paperId, { groupId, question });
+        const cardId = res.entryId ? `ask-${res.entryId}` : id;
         setAiCards((cs) =>
           cs.map((c) =>
-            c.id === id ? { id, kind: "ask", question, answer: res.answer, meta: res.meta } : c,
+            c.id === id
+              ? { id: cardId, kind: "ask", question, answer: res.answer, meta: res.meta }
+              : c,
           ),
         );
       } catch (e) {
@@ -339,8 +360,28 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
         setAskBusy(false);
       }
     },
-    [paperId, groupId, aiCards],
+    [paperId, groupId],
   );
+
+  const handleClearChat = useCallback(async () => {
+    if (!window.confirm("Clear your Ask AI history for this paper?")) return;
+    try {
+      await api.clearAskThread(groupId, paperId);
+      setAiCards((cards) =>
+        cards.filter((card) => card.kind !== "ask" && card.kind !== "ask_error"),
+      );
+    } catch (error) {
+      setAiCards((cards) => [
+        ...cards,
+        {
+          id: nextCardId(),
+          kind: "ask_error",
+          question: "Clear chat",
+          reason: error instanceof Error ? error.message : "Could not clear Ask AI history",
+        },
+      ]);
+    }
+  }, [groupId, paperId]);
 
   const handleBadgeClick = useCallback((a: Annotation, x: number, y: number) => {
     setSel(null);
@@ -679,6 +720,7 @@ export function Reader({ groupId, paperId }: { groupId: string; paperId: string 
             onSelectAnnotation={selectFromPanel}
             onRefreshReviews={() => void refreshReviews()}
             onAsk={(q) => void handleAsk(q)}
+            onClearChat={() => void handleClearChat()}
             onJumpToPage={jumpToPage}
             summarizeBusy={summarizeBusy}
             askBusy={askBusy}

@@ -1,4 +1,5 @@
 import type { ProfileSummary } from "@/contracts/common";
+import type { AiMeta, PaperAnswer } from "@/contracts/ai";
 import type { Group, GroupMember, GroupRole } from "@/contracts/groups";
 import type { LibraryPaper, Paper } from "@/contracts/papers";
 import type { Annotation, Comment, CommentThread } from "@/contracts/annotations";
@@ -95,6 +96,18 @@ export interface ReviewRow {
   relevance: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface AskMessageRow {
+  id: string;
+  group_id: string;
+  paper_id: string;
+  user_id: string;
+  question: string;
+  answer: PaperAnswer;
+  meta: AiMeta;
+  annotation_id: string | null;
+  created_at: string;
 }
 
 export function toProfile(row: ProfileRow): ProfileSummary {

@@ -11,6 +11,7 @@ import {
   DashboardResponse,
   ExplainCitationRequest,
   ExplainCitationResponse,
+  GetAskThreadResponse,
   GetCitationsResponse,
   GetGroupResponse,
   GetPaperResponse,
@@ -137,6 +138,8 @@ export interface Api {
   ): Promise<z.infer<typeof ExplainCitationResponse>>;
   paperSummary(paperId: string, req: z.input<typeof PaperSummaryRequest>): Promise<z.infer<typeof PaperSummaryResponse>>;
   askPaper(paperId: string, req: z.input<typeof AskPaperRequest>): Promise<z.infer<typeof AskPaperResponse>>;
+  getAskThread(groupId: string, paperId: string): Promise<z.infer<typeof GetAskThreadResponse>>;
+  clearAskThread(groupId: string, paperId: string): Promise<void>;
 
   dashboard(groupId: string): Promise<z.infer<typeof DashboardResponse>>;
 }
@@ -201,5 +204,7 @@ export const api: Api = {
   explainCitation: forward("explainCitation"),
   paperSummary: forward("paperSummary"),
   askPaper: forward("askPaper"),
+  getAskThread: forward("getAskThread"),
+  clearAskThread: forward("clearAskThread"),
   dashboard: forward("dashboard"),
 };

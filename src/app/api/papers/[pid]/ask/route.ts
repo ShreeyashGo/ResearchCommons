@@ -1,6 +1,7 @@
 import { AnnotationAnchor, AskPaperRequest, AskPaperResponse } from "@/contracts";
 import { AiOutputError } from "@/server/ai/explain";
 import { askPaper } from "@/server/ai/ask";
+import { loadAskHistory, saveAskEntry } from "@/server/ai/ask-thread";
 import { requireGroupPaperAccess } from "@/server/citations/http";
 import { internal, notFound, upstreamFailed } from "@/server/http/errors";
 import { json, parseJson, requireUser, routeHandler, uuidParam } from "@/server/http/handler";
@@ -8,14 +9,14 @@ import { enforceRateLimit } from "@/server/http/rate-limit";
 
 /**
  * POST /api/papers/:pid/ask — Q&A grounded in the paper being read (full text
- * when the stored PDF is extractable). Not cached (MVP).
+ * when the stored PDF is extractable). Not cached; persisted per user.
  */
 export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
   const { pid } = await ctx.params;
   uuidParam(pid);
   const body = await parseJson(req, AskPaperRequest);
 
-  const { supabase } = await requireUser();
+  const { supabase, user } = await requireUser();
   await requireGroupPaperAccess(supabase, pid, body.groupId); // 404 unless member + linked
   await enforceRateLimit(supabase, "ask");
 
@@ -42,7 +43,7 @@ export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
   try {
     result = await askPaper(pid, {
       question: body.question,
-      history: body.history,
+      history: await loadAskHistory(supabase, user.id, body.groupId, pid),
       focusPassage,
     });
   } catch (err) {
@@ -53,5 +54,14 @@ export const POST = routeHandler<{ pid: string }>(async (req, ctx) => {
   }
   if (!result) throw notFound("paper not found");
 
-  return json(AskPaperResponse.parse({ answer: result.answer, meta: result.meta }));
+  const entryId = await saveAskEntry(supabase, {
+    userId: user.id,
+    groupId: body.groupId,
+    paperId: pid,
+    question: body.question,
+    annotationId: body.annotationId ?? null,
+    answer: result.answer,
+    meta: result.meta,
+  });
+  return json(AskPaperResponse.parse({ answer: result.answer, meta: result.meta, entryId }));
 });

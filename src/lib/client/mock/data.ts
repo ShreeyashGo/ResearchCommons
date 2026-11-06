@@ -1,4 +1,5 @@
 import type {
+  AskThreadEntry,
   AnchorSegment,
   Annotation,
   AnnotationAnchor,
@@ -282,6 +283,7 @@ export interface MockState {
   groupDetails: Map<string, GroupDetail>;
   papers: Map<string, LibraryPaper>; // key `${gid}:${pid}`
   annotations: Map<string, Annotation[]>; // key `${gid}:${pid}`
+  askThreads: Map<string, AskThreadEntry[]>;
   reviews: Map<string, Review[]>;
   references: Reference[];
   contexts: CitationContext[];
@@ -771,6 +773,7 @@ export function initialState(): MockState {
     groupDetails,
     papers,
     annotations,
+    askThreads: new Map(),
     reviews,
     references,
     contexts,

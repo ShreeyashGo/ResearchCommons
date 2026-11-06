@@ -6,6 +6,13 @@ import { AnnotationResponse, ListAnnotationsResponse } from "@/contracts/annotat
 import { DashboardResponse } from "@/contracts/dashboard";
 import { ListLibraryResponse } from "@/contracts/papers";
 import { ListReviewsResponse, ReviewResponse } from "@/contracts/reviews";
+import { askPaper } from "@/server/ai/ask";
+import {
+  clearAskThread,
+  listAskThread,
+  loadAskHistory,
+  saveAskEntry,
+} from "@/server/ai/ask-thread";
 import {
   addComment,
   createAnnotation,
@@ -38,6 +45,7 @@ import {
   upsertMyReview,
 } from "@/server/reviews/service";
 import { updateProfile } from "@/server/profile/service";
+import { mockProvider } from "@/server/ai/providers/mock";
 
 const enabled = process.env.RLS_TESTS === "1";
 
@@ -737,5 +745,72 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
       code: "validation_failed",
       message: "Anchor page out of range.",
     });
+  });
+
+  it("persists private Ask threads and loads bounded history", async () => {
+    const group = await createGroup(a.client, a.id, {
+      name: `Ask thread group ${randomUUID()}`,
+      description: "",
+    });
+    groupIds.push(group.id);
+    await joinGroup(b.client, b.id, group.inviteCode);
+
+    const { data: paper, error: paperError } = await admin
+      .from("papers")
+      .insert({
+        source: "upload",
+        title: `Ask thread paper ${randomUUID()}`,
+        authors: ["Ask thread test"],
+        abstract: "A deterministic abstract for Ask thread integration tests.",
+        created_by: a.id,
+      })
+      .select("id")
+      .single();
+    expect(paperError).toBeNull();
+    if (!paper) throw new Error("Service client did not create the Ask test paper.");
+    paperIds.push(paper.id);
+
+    const { error: linkError } = await admin.from("group_papers").insert({
+      group_id: group.id,
+      paper_id: paper.id,
+      added_by: a.id,
+    });
+    expect(linkError).toBeNull();
+
+    for (const question of ["What is the main idea?", "What does the abstract emphasize?"]) {
+      const history = await loadAskHistory(a.client, a.id, group.id, paper.id);
+      const result = await askPaper(paper.id, { question, history }, mockProvider);
+      expect(result).not.toBeNull();
+      if (!result) throw new Error("Ask provider returned no result for the test paper.");
+      const entryId = await saveAskEntry(a.client, {
+        userId: a.id,
+        groupId: group.id,
+        paperId: paper.id,
+        question,
+        annotationId: null,
+        answer: result.answer,
+        meta: result.meta,
+      });
+      expect(entryId).not.toBeNull();
+    }
+
+    const entries = await listAskThread(a.client, a.id, group.id, paper.id);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.question)).toEqual([
+      "What is the main idea?",
+      "What does the abstract emphasize?",
+    ]);
+    const history = await loadAskHistory(a.client, a.id, group.id, paper.id);
+    expect(history).toHaveLength(4);
+    expect(history.map((turn) => turn.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+
+    expect(await listAskThread(b.client, b.id, group.id, paper.id)).toEqual([]);
+    await clearAskThread(a.client, a.id, group.id, paper.id);
+    expect(await listAskThread(a.client, a.id, group.id, paper.id)).toEqual([]);
   });
 });

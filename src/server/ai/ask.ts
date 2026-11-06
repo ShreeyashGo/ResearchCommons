@@ -23,7 +23,7 @@ export interface AskPaperResult {
 
 /**
  * Q&A over a stored paper row, grounded in the extracted full text (page-tagged,
- * best-effort) or the abstract/metadata. Not cached or persisted (MVP). Returns
+ * best-effort) or the abstract/metadata. Not cached; callers persist the thread per user. Returns
  * null when the paper does not exist. Uses the service-role client: callers MUST
  * authorize first.
  */
