@@ -104,9 +104,15 @@ export async function updateDisplayName(
   try {
     const { profile } = await api.updateMe({ displayName: name });
     if (!API_MOCK) {
-      await createBrowserSupabaseClient().auth
-        .updateUser({ data: { display_name: profile.displayName } })
-        .catch(() => null);
+      const { error } = await createBrowserSupabaseClient().auth.updateUser({
+        data: { display_name: profile.displayName },
+      });
+      if (error) {
+        return {
+          error:
+            "Display name saved, but your session couldn't be refreshed. Sign out and back in to see it.",
+        };
+      }
     }
     window.dispatchEvent(new Event("rc:session-user-changed"));
     return {};
