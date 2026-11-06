@@ -96,6 +96,9 @@ export function PageOverlays({
           <button
             key={`${ctx.id}:${gi}:${i}`}
             className={cn("cite-hotspot")}
+            data-testid="citation-marker"
+            data-marker={ctx.markerText}
+            data-reference-id={ctx.referenceId}
             style={{
               left: `${r.x * 100}%`,
               top: `${r.y * 100}%`,

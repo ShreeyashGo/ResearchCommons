@@ -35,7 +35,7 @@ export function SelectionToolbar({
 
   return (
     <Popover anchor={{ x, y }} onClose={onClose} width={commentMode ? 320 : 252}>
-      <div className="p-2">
+      <div className="p-2" data-testid="selection-toolbar">
         <div className="flex items-center gap-1.5">
           {ANNOTATION_COLORS.map((c) => (
             <button
@@ -56,6 +56,7 @@ export function SelectionToolbar({
               visibility === "private" ? "bg-warn-soft text-warn" : "text-muted hover:text-ink",
             )}
             onClick={() => setVisibility(visibility === "group" ? "private" : "group")}
+            data-testid="selection-visibility-toggle"
             title={visibility === "private" ? "Only you can see this" : "Visible to the group"}
           >
             {visibility === "private" ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -67,6 +68,7 @@ export function SelectionToolbar({
               commentMode ? "bg-accent-soft text-accent-strong" : "text-muted hover:text-ink",
             )}
             onClick={() => setCommentMode((v) => !v)}
+            data-testid="selection-comment-toggle"
             title="Add a comment"
           >
             <MessageSquare size={12} />
@@ -79,6 +81,7 @@ export function SelectionToolbar({
               autoFocus
               rows={2}
               className="mt-2 text-[13px]"
+              data-testid="selection-comment-input"
               placeholder="Comment on this passage…"
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -92,6 +95,7 @@ export function SelectionToolbar({
               <Button
                 size="xs"
                 disabled={!body.trim()}
+                data-testid="selection-comment-submit"
                 onClick={() => onAnnotate({ color, visibility, withComment: true, body })}
               >
                 Save note
@@ -101,7 +105,11 @@ export function SelectionToolbar({
         )}
         {!commentMode && (
           <div className="mt-1.5 flex justify-end">
-            <Button size="xs" onClick={() => onAnnotate({ color, visibility, withComment: false })}>
+            <Button
+              size="xs"
+              data-testid="selection-highlight"
+              onClick={() => onAnnotate({ color, visibility, withComment: false })}
+            >
               Highlight
             </Button>
           </div>
@@ -260,6 +268,7 @@ export function ThreadPopover({
               {!thread.deleted && (
                 <button
                   className="flex items-center gap-1 pl-6 text-[11px] font-medium text-muted hover:text-accent"
+                  data-testid="thread-reply-action"
                   onClick={() => setReplyTo(replyTo === thread.id ? null : thread.id)}
                 >
                   <Reply size={11} /> Reply
@@ -271,12 +280,18 @@ export function ThreadPopover({
                     autoFocus
                     rows={2}
                     className="text-[13px]"
+                    data-testid="thread-reply-input"
                     placeholder={`Reply to ${thread.author.displayName}…`}
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
                   />
                   <div className="mt-1 flex gap-1.5">
-                    <Button size="xs" disabled={busy || !replyText.trim()} onClick={() => post(thread.id)}>
+                    <Button
+                      size="xs"
+                      disabled={busy || !replyText.trim()}
+                      data-testid="thread-reply-submit"
+                      onClick={() => post(thread.id)}
+                    >
                       Reply
                     </Button>
                     <Button size="xs" variant="ghost" onClick={() => setReplyTo(null)}>
