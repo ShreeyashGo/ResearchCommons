@@ -70,5 +70,27 @@ describe("API_MOCK flag", () => {
     const { group } = await api.createGroup({ name: "Solo group", description: "" });
     await expect(api.leaveGroup(group.id)).resolves.toEqual({ result: "deleted" });
     expect((await api.me()).groups.some((entry) => entry.id === group.id)).toBe(false);
+    await expect(api.joinGroup({ inviteCode: group.inviteCode })).rejects.toMatchObject({
+      code: "not_found",
+    });
+  });
+
+  it("can rejoin a group after leaving with its existing invite code", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCK", "1");
+    const { api } = await import("@/lib/client/api");
+    const { MOCK_USER } = await import("@/lib/client/mock/data");
+    const { groups } = await api.listGroups();
+    const group = groups.find((entry) => entry.myRole === "member");
+    if (!group) throw new Error("Expected a member mock group.");
+
+    await expect(api.leaveGroup(group.id)).resolves.toEqual({ result: "left" });
+    expect((await api.listGroups()).groups.some((entry) => entry.id === group.id)).toBe(false);
+
+    const joined = await api.joinGroup({ inviteCode: group.inviteCode });
+    expect(joined.group.id).toBe(group.id);
+    expect(joined.group.myRole).toBe("member");
+    expect((await api.listGroups()).groups.some((entry) => entry.id === group.id)).toBe(true);
+    const detail = await api.getGroup(group.id);
+    expect(detail.group.members.find((member) => member.id === MOCK_USER.id)?.role).toBe("member");
   });
 });

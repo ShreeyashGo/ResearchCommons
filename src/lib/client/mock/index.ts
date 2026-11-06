@@ -175,11 +175,29 @@ export const mockApi: Api = {
   async joinGroup(req: z.input<typeof JoinGroupRequest>) {
     await sleep();
     const s = store();
-    const group = s.groups.find((g) => g.inviteCode === req.inviteCode.toLowerCase());
+    const inviteCode = req.inviteCode.toLowerCase();
+    const group =
+      s.groups.find((g) => g.inviteCode === inviteCode) ??
+      s.leftGroups.find((g) => g.inviteCode === inviteCode);
     if (!group) {
       throw new ApiClientError(404, { error: { code: "not_found", message: "Invalid invite code" } }, "not found");
     }
-    group.memberCount += 1;
+    const details = groupDetailOr404(group.id);
+    if (!details.members.some((member) => member.id === MOCK_USER.id)) {
+      details.members.push({
+        ...MOCK_USER,
+        role: "member",
+        joinedAt: new Date().toISOString(),
+      });
+      group.myRole = "member";
+      details.myRole = "member";
+      group.memberCount += 1;
+      details.memberCount = group.memberCount;
+    }
+    s.leftGroups = s.leftGroups.filter((entry) => entry.id !== group.id);
+    if (!s.groups.some((entry) => entry.id === group.id)) {
+      s.groups.push(group);
+    }
     return { group };
   },
 
@@ -263,6 +281,7 @@ export const mockApi: Api = {
 
     if (details.members.length === 1) {
       s.groups = s.groups.filter((entry) => entry.id !== groupId);
+      s.leftGroups = s.leftGroups.filter((entry) => entry.id !== groupId);
       s.groupDetails.delete(groupId);
       for (const [paperKey, paper] of s.papers) {
         if (paper.groupId === groupId) {
@@ -282,6 +301,14 @@ export const mockApi: Api = {
     }
 
     details.members.splice(details.members.indexOf(member), 1);
+    const group = s.groups.find((entry) => entry.id === groupId);
+    if (group) {
+      group.memberCount = Math.max(0, group.memberCount - 1);
+      group.myRole = "member";
+      details.memberCount = group.memberCount;
+      details.myRole = "member";
+      s.leftGroups = [...s.leftGroups.filter((entry) => entry.id !== groupId), group];
+    }
     s.groups = s.groups.filter((entry) => entry.id !== groupId);
     return LeaveGroupResponse.parse({ result: "left" });
   },

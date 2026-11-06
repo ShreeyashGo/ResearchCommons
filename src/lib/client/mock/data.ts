@@ -278,6 +278,7 @@ export function pageCount(paperId: string): number {
 export interface MockState {
   profile: ProfileSummary & { email: string };
   groups: Group[];
+  leftGroups: Group[];
   groupDetails: Map<string, GroupDetail>;
   papers: Map<string, LibraryPaper>; // key `${gid}:${pid}`
   annotations: Map<string, Annotation[]>; // key `${gid}:${pid}`
@@ -766,6 +767,7 @@ export function initialState(): MockState {
   return {
     profile: MOCK_USER,
     groups,
+    leftGroups: [],
     groupDetails,
     papers,
     annotations,
