@@ -88,9 +88,9 @@ Sign in to the seeded **Koala Lab** with either demo account:
 | Alice Koala | `alice@koalalab.dev` | `koala-demo-123` |
 | Bob Koala | `bob@koalalab.dev` | `koala-demo-123` |
 
-New accounts require email confirmation. Confirmation and password-reset links return through `/auth/callback`; password resets continue to `/reset-password`. Local Supabase emails are captured by Mailpit at [http://127.0.0.1:54324](http://127.0.0.1:54324).
+New accounts require email confirmation. Confirmation and password-reset emails use token-hash links through `/auth/confirm`, so they work across devices; `/auth/callback` remains available for PKCE code-flow links. Password resets continue to `/reset-password`. Local Supabase emails are captured by Mailpit at [http://127.0.0.1:54324](http://127.0.0.1:54324).
 
-For a hosted deployment, enable **Confirm email** and add `<site>/auth/callback` under the Supabase Dashboard’s **Authentication → URL Configuration → Redirect URLs**. Supabase’s built-in email is free but heavily rate-limited. Custom SMTP is optional and is not configured here.
+For a hosted deployment, enable **Confirm email**, add `<site>/auth/callback` and `<site>/auth/confirm` under **Authentication → URL Configuration → Redirect URLs**, and paste `supabase/templates/confirmation.html` and `supabase/templates/recovery.html` into **Dashboard → Auth → Email Templates**. Supabase’s built-in email is free but heavily rate-limited. Custom SMTP is optional and is not configured here.
 
 Koala Lab includes two papers: **Attention Is All You Need** and **Agentic Misalignment: How LLMs Could Be Insider Threats**.
 
