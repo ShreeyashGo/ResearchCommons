@@ -279,6 +279,7 @@ export default function Home() {
                   bare
                   groups={groups}
                   active={null}
+                  userId={user.id}
                   open={menuOpen}
                   onOpenChange={setMenuOpen}
                   onSelect={() => window.location.reload()}

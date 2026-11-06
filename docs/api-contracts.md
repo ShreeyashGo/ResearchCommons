@@ -10,6 +10,11 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | POST | `/api/groups` | `CreateGroupRequest` | 201 `CreateGroupResponse` | RPC `create_group` |
 | POST | `/api/groups/join` | `JoinGroupRequest` | `JoinGroupResponse` | 404 invalid code; idempotent |
 | GET | `/api/groups/:gid` | — | `GetGroupResponse` | |
+| PATCH | `/api/groups/:gid` | `UpdateGroupRequest` | `UpdateGroupResponse` | owner only |
+| POST | `/api/groups/:gid/invite` | — | `RotateInviteResponse` | owner only; rotates invite code |
+| PATCH | `/api/groups/:gid/members/:uid` | `UpdateMemberRoleRequest` | `GetGroupResponse` | owner only |
+| DELETE | `/api/groups/:gid/members/:uid` | — | 204 | owner removes another member |
+| POST | `/api/groups/:gid/leave` | — | `LeaveGroupResponse` | leaving as last member deletes the group |
 | GET | `/api/groups/:gid/papers` | query `ListLibraryQuery` | `ListLibraryResponse` | ranked full-text search with escaped substring fallback across title/authors/abstract; optional tag filter; internal search index is not returned |
 | POST | `/api/groups/:gid/papers/arxiv` | `ImportArxivRequest` | 201 `ImportPaperResponse` | dedupe by arxivId; 409 if already in this group; enqueues citation processing |
 | POST | `/api/groups/:gid/papers/upload` | multipart `file` + `metadata` (`UploadPaperMetadata` JSON) | 201 `ImportPaperResponse` | PDF magic bytes checked; ≤ 20 MiB; dedupe by sha256; enqueues citation processing |

@@ -19,6 +19,7 @@ import {
   ImportPaperResponse,
   JoinGroupRequest,
   JoinGroupResponse,
+  LeaveGroupResponse,
   LibraryPaper,
   ListAnnotationsResponse,
   ListGroupsResponse,
@@ -29,10 +30,14 @@ import {
   PaperSummaryRequest,
   PaperSummaryResponse,
   ProcessPaperResponse,
+  RotateInviteResponse,
   ReviewInput,
   ReviewResponse,
   UpdateAnnotationRequest,
   UpdateCommentRequest,
+  UpdateGroupRequest,
+  UpdateGroupResponse,
+  UpdateMemberRoleRequest,
   UpdateProfileRequest,
   UpdateProfileResponse,
   UploadPaperMetadata,
@@ -103,6 +108,26 @@ export const httpApi: Api = {
   joinGroup: (req: z.input<typeof JoinGroupRequest>) =>
     request("POST", "/api/groups/join", JoinGroupResponse, JoinGroupRequest.parse(req)),
   getGroup: (groupId) => request("GET", `/api/groups/${groupId}`, GetGroupResponse),
+  updateGroup: (groupId, req: z.input<typeof UpdateGroupRequest>) =>
+    request(
+      "PATCH",
+      `/api/groups/${groupId}`,
+      UpdateGroupResponse,
+      UpdateGroupRequest.parse(req),
+    ),
+  rotateInviteCode: (groupId) =>
+    request("POST", `/api/groups/${groupId}/invite`, RotateInviteResponse),
+  setMemberRole: (groupId, userId, req: z.input<typeof UpdateMemberRoleRequest>) =>
+    request(
+      "PATCH",
+      `/api/groups/${groupId}/members/${userId}`,
+      GetGroupResponse,
+      UpdateMemberRoleRequest.parse(req),
+    ),
+  removeMember: (groupId, userId) =>
+    requestEmpty("DELETE", `/api/groups/${groupId}/members/${userId}`),
+  leaveGroup: (groupId) =>
+    request("POST", `/api/groups/${groupId}/leave`, LeaveGroupResponse),
 
   listLibrary: (groupId, query) =>
     request("GET", `/api/groups/${groupId}/papers${qs(query)}`, ListLibraryResponse),

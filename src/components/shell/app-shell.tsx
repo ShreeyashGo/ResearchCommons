@@ -140,6 +140,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <GroupMenu
               groups={groups}
               active={activeGroup}
+              userId={user.id}
               open={menuOpen}
               onOpenChange={setMenuOpen}
               onSelect={(g) => router.push(`/g/${g.id}`)}
@@ -166,6 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <GroupMenu
               groups={groups ?? []}
               active={null}
+              userId={user.id}
               open={menuOpen}
               onOpenChange={setMenuOpen}
               onSelect={(g) => router.push(`/g/${g.id}`)}

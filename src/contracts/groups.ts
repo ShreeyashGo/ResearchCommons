@@ -23,6 +23,16 @@ export type GroupMember = z.infer<typeof GroupMember>;
 export const GroupDetail = Group.extend({ members: z.array(GroupMember) });
 export type GroupDetail = z.infer<typeof GroupDetail>;
 
+export const UpdateGroupRequest = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(2000).optional(),
+}).refine((v) => v.name !== undefined || v.description !== undefined, "Nothing to update.");
+export type UpdateGroupRequest = z.input<typeof UpdateGroupRequest>;
+export const UpdateGroupResponse = z.object({ group: Group });
+export const RotateInviteResponse = z.object({ inviteCode: z.string() });
+export const UpdateMemberRoleRequest = z.object({ role: GroupRole });
+export const LeaveGroupResponse = z.object({ result: z.enum(["left", "deleted"]) });
+
 // GET /api/me
 export const MeResponse = z.object({
   profile: ProfileSummary.extend({ email: z.string() }),

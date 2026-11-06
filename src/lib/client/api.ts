@@ -18,6 +18,7 @@ import {
   ImportPaperResponse,
   JoinGroupRequest,
   JoinGroupResponse,
+  LeaveGroupResponse,
   LibraryPaper,
   ListAnnotationsResponse,
   ListGroupsResponse,
@@ -28,10 +29,14 @@ import {
   PaperSummaryRequest,
   PaperSummaryResponse,
   ProcessPaperResponse,
+  RotateInviteResponse,
   ReviewInput,
   ReviewResponse,
   UpdateAnnotationRequest,
   UpdateCommentRequest,
+  UpdateGroupRequest,
+  UpdateGroupResponse,
+  UpdateMemberRoleRequest,
   UpdateProfileRequest,
   UpdateProfileResponse,
   UploadPaperMetadata,
@@ -82,6 +87,18 @@ export interface Api {
   createGroup(req: z.input<typeof CreateGroupRequest>): Promise<z.infer<typeof CreateGroupResponse>>;
   joinGroup(req: z.input<typeof JoinGroupRequest>): Promise<z.infer<typeof JoinGroupResponse>>;
   getGroup(groupId: string): Promise<z.infer<typeof GetGroupResponse>>;
+  updateGroup(
+    groupId: string,
+    req: z.input<typeof UpdateGroupRequest>,
+  ): Promise<z.infer<typeof UpdateGroupResponse>>;
+  rotateInviteCode(groupId: string): Promise<z.infer<typeof RotateInviteResponse>>;
+  setMemberRole(
+    groupId: string,
+    userId: string,
+    req: z.input<typeof UpdateMemberRoleRequest>,
+  ): Promise<z.infer<typeof GetGroupResponse>>;
+  removeMember(groupId: string, userId: string): Promise<void>;
+  leaveGroup(groupId: string): Promise<z.infer<typeof LeaveGroupResponse>>;
 
   listLibrary(groupId: string, query?: z.input<typeof ListLibraryQuery>): Promise<z.infer<typeof ListLibraryResponse>>;
   importArxiv(groupId: string, req: z.input<typeof ImportArxivRequest>): Promise<z.infer<typeof ImportPaperResponse>>;
@@ -158,6 +175,11 @@ export const api: Api = {
   createGroup: forward("createGroup"),
   joinGroup: forward("joinGroup"),
   getGroup: forward("getGroup"),
+  updateGroup: forward("updateGroup"),
+  rotateInviteCode: forward("rotateInviteCode"),
+  setMemberRole: forward("setMemberRole"),
+  removeMember: forward("removeMember"),
+  leaveGroup: forward("leaveGroup"),
   listLibrary: forward("listLibrary"),
   importArxiv: forward("importArxiv"),
   uploadPaper: forward("uploadPaper"),
