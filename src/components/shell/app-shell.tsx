@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ChevronsLeft,
   PanelLeft,
   Plus,
+  Settings,
   Users,
 } from "lucide-react";
 import type { Group, LibraryPaper } from "@/contracts";
@@ -87,10 +89,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Redirect to the first group when landing inside the shell without a gid.
   useEffect(() => {
-    if (!loading && user && groups && !activeGid && groups.length > 0) {
+    if (
+      !loading &&
+      user &&
+      groups &&
+      !activeGid &&
+      groups.length > 0 &&
+      !pathname.startsWith("/settings")
+    ) {
       router.replace(`/g/${groups[0].id}`);
     }
-  }, [loading, user, groups, activeGid, router]);
+  }, [loading, user, groups, activeGid, pathname, router]);
 
   if (loading || !user) {
     return (
@@ -171,6 +180,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <p className="truncate text-[13px] font-medium leading-4">{user.displayName}</p>
             <p className="truncate text-[11px] text-muted">{user.email}</p>
           </div>
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            title="Settings"
+            className="rounded-md p-1.5 text-muted hover:bg-surface-2 hover:text-ink"
+          >
+            <Settings size={15} />
+          </Link>
           <button
             className="text-[11px] font-medium text-muted hover:text-ink"
             onClick={() => signOut().then(() => router.replace("/login"))}

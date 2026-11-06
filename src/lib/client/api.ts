@@ -32,6 +32,8 @@ import {
   ReviewResponse,
   UpdateAnnotationRequest,
   UpdateCommentRequest,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
   UploadPaperMetadata,
   type ApiError as ApiErrorBody,
   type ErrorCode,
@@ -75,6 +77,7 @@ export type { ApiErrorBody, LibraryPaper };
 
 export interface Api {
   me(): Promise<z.infer<typeof MeResponse>>;
+  updateMe(req: z.input<typeof UpdateProfileRequest>): Promise<z.infer<typeof UpdateProfileResponse>>;
   listGroups(): Promise<z.infer<typeof ListGroupsResponse>>;
   createGroup(req: z.input<typeof CreateGroupRequest>): Promise<z.infer<typeof CreateGroupResponse>>;
   joinGroup(req: z.input<typeof JoinGroupRequest>): Promise<z.infer<typeof JoinGroupResponse>>;
@@ -150,6 +153,7 @@ function forward<K extends keyof Api>(name: K): Api[K] {
 
 export const api: Api = {
   me: forward("me"),
+  updateMe: forward("updateMe"),
   listGroups: forward("listGroups"),
   createGroup: forward("createGroup"),
   joinGroup: forward("joinGroup"),

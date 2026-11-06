@@ -33,6 +33,8 @@ import {
   ReviewResponse,
   UpdateAnnotationRequest,
   UpdateCommentRequest,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
   UploadPaperMetadata,
 } from "@/contracts";
 import { ApiClientError, type Api } from "./api";
@@ -92,6 +94,8 @@ function qs(query?: z.input<typeof ListLibraryQuery>): string {
 
 export const httpApi: Api = {
   me: () => request("GET", "/api/me", MeResponse),
+  updateMe: (req: z.input<typeof UpdateProfileRequest>) =>
+    request("PATCH", "/api/me", UpdateProfileResponse, UpdateProfileRequest.parse(req)),
 
   listGroups: () => request("GET", "/api/groups", ListGroupsResponse),
   createGroup: (req: z.input<typeof CreateGroupRequest>) =>

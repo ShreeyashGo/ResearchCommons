@@ -9,8 +9,9 @@ Single Next.js 15 App Router app (TypeScript strict), modular monolith.
 src/
   contracts/        zod schemas + TS types shared by client, server, ML (lead-owned)
   app/api/**        thin route handlers: auth -> zod parse -> service -> zod-shaped JSON
-  app/(auth)/**     login / signup
-  app/(app)/**      dashboard, library, reader
+  app/(auth)/**     login, signup, password recovery
+  app/auth/callback/ email confirmation and password-reset callback
+  app/(app)/**      dashboard, library, reader, settings
   components/**     UI
   lib/client/**     browser supabase client, typed API client (fetch wrappers over contracts)
   server/
@@ -22,6 +23,9 @@ src/
 supabase/           config.toml, migrations/, seed.sql
 tests/              unit (vitest), rls (vitest vs local supabase), e2e (playwright)
 ```
+
+## Authentication
+Signup requires email confirmation. Confirmation and password-reset emails return through `/auth/callback`, which exchanges the one-time code for a session and only redirects to a safe same-site path. Password recovery continues to `/reset-password`; account settings support display-name and password updates and signing out all sessions. Local Supabase sends email to Mailpit at `http://127.0.0.1:54324`. For hosted deployments, enable Confirm email and add `<site>/auth/callback` to the Supabase Dashboard Redirect URLs. Supabase’s built-in email is free but heavily rate-limited; custom SMTP is optional and is not configured.
 
 ## 2. Data access rules
 1. Browser uses supabase-js only for auth session and Realtime. All data reads/writes go through `/api/**`.

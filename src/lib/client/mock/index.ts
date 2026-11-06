@@ -14,7 +14,12 @@ import type {
   UpdateCommentRequest,
   UploadPaperMetadata,
 } from "@/contracts";
-import { AskPaperRequest, ReviewInput } from "@/contracts";
+import {
+  AskPaperRequest,
+  ReviewInput,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
+} from "@/contracts";
 import { ApiClientError, type Api } from "../api";
 import {
   dashboardFixture,
@@ -97,6 +102,15 @@ export const mockApi: Api = {
     await sleep(60);
     const s = store();
     return { profile: s.profile, groups: s.groups };
+  },
+
+  async updateMe(req: z.input<typeof UpdateProfileRequest>) {
+    await sleep();
+    const { displayName } = UpdateProfileRequest.parse(req);
+    const s = store();
+    s.profile.displayName = displayName;
+    MOCK_USER.displayName = displayName;
+    return UpdateProfileResponse.parse({ profile: s.profile });
   },
 
   async listGroups() {

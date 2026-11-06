@@ -5,6 +5,7 @@ Types and zod schemas live in `src/contracts/**`; this file is the index. All bo
 | Method | Path | Request | Response | Notes |
 |---|---|---|---|---|
 | GET | `/api/me` | — | `MeResponse` | |
+| PATCH | `/api/me` | `UpdateProfileRequest` | `UpdateProfileResponse` | updates the signed-in user’s display name |
 | GET | `/api/groups` | — | `ListGroupsResponse` | |
 | POST | `/api/groups` | `CreateGroupRequest` | 201 `CreateGroupResponse` | RPC `create_group` |
 | POST | `/api/groups/join` | `JoinGroupRequest` | `JoinGroupResponse` | 404 invalid code; idempotent |

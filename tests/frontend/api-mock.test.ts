@@ -29,4 +29,12 @@ describe("API_MOCK flag", () => {
     const { API_MOCK } = await import("@/lib/client/api");
     expect(API_MOCK).toBe(true);
   });
+
+  it("updates the mock profile and rejects an empty display name", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCK", "1");
+    const { api } = await import("@/lib/client/api");
+    await api.updateMe({ displayName: "  Grace Hopper  " });
+    expect((await api.me()).profile.displayName).toBe("Grace Hopper");
+    await expect(api.updateMe({ displayName: "" })).rejects.toThrow();
+  });
 });
