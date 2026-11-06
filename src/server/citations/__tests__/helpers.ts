@@ -10,7 +10,7 @@ export function fixtureDir(arxivId: string): string {
 
 export function fixturePdf(arxivId: string): Buffer {
   const bytes = readFileSync(path.join(fixtureDir(arxivId), "paper.pdf"));
-  if (bytes.subarray(0, 20).toString("utf8").startsWith("version https://git-lfs")) {
+  if (bytes.subarray(0, 64).toString("utf8").startsWith("version https://git-lfs")) {
     throw new Error("fixture is a Git LFS pointer; run git lfs pull");
   }
   return bytes;
