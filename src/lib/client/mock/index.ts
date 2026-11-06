@@ -16,7 +16,12 @@ import type {
 } from "@/contracts";
 import {
   AskPaperRequest,
+  LeaveGroupResponse,
   ReviewInput,
+  RotateInviteResponse,
+  UpdateGroupRequest as UpdateGroupRequestSchema,
+  UpdateGroupResponse,
+  UpdateMemberRoleRequest as UpdateMemberRoleRequestSchema,
   UpdateProfileRequest,
   UpdateProfileResponse,
 } from "@/contracts";
@@ -74,6 +79,34 @@ function groupOr404(groupId: string) {
   const g = store().groups.find((x) => x.id === groupId);
   if (!g) throw new ApiClientError(404, { error: { code: "not_found", message: "Group not found" } }, "not found");
   return g;
+}
+
+function groupDetailOr404(groupId: string) {
+  const group = store().groupDetails.get(groupId);
+  if (!group) {
+    throw new ApiClientError(404, { error: { code: "not_found", message: "Group not found" } }, "not found");
+  }
+  return group;
+}
+
+function requireMockOwner(groupId: string) {
+  const group = groupOr404(groupId);
+  if (group.myRole !== "owner") {
+    throw new ApiClientError(
+      403,
+      { error: { code: "forbidden", message: "Only group owners can do that." } },
+      "forbidden",
+    );
+  }
+  return group;
+}
+
+function mockConflict(message: string) {
+  return new ApiClientError(409, { error: { code: "conflict", message } }, "conflict");
+}
+
+function mockNotFound(message: string) {
+  return new ApiClientError(404, { error: { code: "not_found", message } }, "not found");
 }
 
 function findAnnotation(annotationId: string): Annotation | undefined {
@@ -152,9 +185,105 @@ export const mockApi: Api = {
 
   async getGroup(groupId) {
     await sleep();
-    const g = store().groupDetails.get(groupId);
-    if (!g) throw new ApiClientError(404, { error: { code: "not_found", message: "Group not found" } }, "not found");
+    const g = groupDetailOr404(groupId);
+    if (!g.members.some((member) => member.id === MOCK_USER.id)) {
+      throw mockNotFound("Group not found");
+    }
     return { group: g };
+  },
+
+  async updateGroup(groupId, req: z.input<typeof UpdateGroupRequestSchema>) {
+    await sleep();
+    const input = UpdateGroupRequestSchema.parse(req);
+    const group = requireMockOwner(groupId);
+    Object.assign(group, input);
+    Object.assign(groupDetailOr404(groupId), input);
+    return UpdateGroupResponse.parse({ group });
+  },
+
+  async rotateInviteCode(groupId) {
+    await sleep();
+    const group = requireMockOwner(groupId);
+    const inviteCode = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+    group.inviteCode = inviteCode;
+    groupDetailOr404(groupId).inviteCode = inviteCode;
+    return RotateInviteResponse.parse({ inviteCode });
+  },
+
+  async setMemberRole(
+    groupId,
+    userId,
+    req: z.input<typeof UpdateMemberRoleRequestSchema>,
+  ) {
+    await sleep();
+    const { role } = UpdateMemberRoleRequestSchema.parse(req);
+    const group = requireMockOwner(groupId);
+    const details = groupDetailOr404(groupId);
+    const member = details.members.find((entry) => entry.id === userId);
+    if (!member) throw mockNotFound("Member not found");
+    if (
+      member.role === "owner" &&
+      role === "member" &&
+      details.members.filter((entry) => entry.role === "owner").length === 1
+    ) {
+      throw mockConflict("A group needs at least one owner.");
+    }
+    member.role = role;
+    if (userId === MOCK_USER.id) {
+      group.myRole = role;
+      details.myRole = role;
+    }
+    return { group: details };
+  },
+
+  async removeMember(groupId, userId) {
+    await sleep();
+    const group = requireMockOwner(groupId);
+    const details = groupDetailOr404(groupId);
+    if (userId === MOCK_USER.id) {
+      throw new ApiClientError(
+        422,
+        { error: { code: "validation_failed", message: "Use leave_group to leave a group." } },
+        "validation failed",
+      );
+    }
+    const index = details.members.findIndex((entry) => entry.id === userId);
+    if (index < 0) throw mockNotFound("Member not found");
+    details.members.splice(index, 1);
+    group.memberCount = Math.max(0, group.memberCount - 1);
+  },
+
+  async leaveGroup(groupId) {
+    await sleep();
+    const s = store();
+    groupOr404(groupId);
+    const details = groupDetailOr404(groupId);
+    const member = details.members.find((entry) => entry.id === MOCK_USER.id);
+    if (!member) throw mockNotFound("Not a member");
+
+    if (details.members.length === 1) {
+      s.groups = s.groups.filter((entry) => entry.id !== groupId);
+      s.groupDetails.delete(groupId);
+      for (const [paperKey, paper] of s.papers) {
+        if (paper.groupId === groupId) {
+          s.papers.delete(paperKey);
+          s.annotations.delete(paperKey);
+          s.reviews.delete(paperKey);
+        }
+      }
+      return LeaveGroupResponse.parse({ result: "deleted" });
+    }
+
+    if (
+      member.role === "owner" &&
+      details.members.filter((entry) => entry.role === "owner").length === 1
+    ) {
+      throw mockConflict("Make another member an owner before leaving.");
+    }
+
+    details.members.splice(details.members.indexOf(member), 1);
+    s.groups = s.groups.filter((entry) => entry.id !== groupId);
+    return LeaveGroupResponse.parse({ result: "left" });
   },
 
   async listLibrary(groupId, query) {

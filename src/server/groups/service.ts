@@ -3,8 +3,15 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { z } from "zod";
 import type { Group, GroupDetail, GroupRole } from "@/contracts/groups";
-import { CreateGroupRequest } from "@/contracts/groups";
-import { internal, notFound } from "@/server/http/errors";
+import { CreateGroupRequest, UpdateGroupRequest } from "@/contracts/groups";
+import {
+  conflict,
+  forbidden,
+  internal,
+  notFound,
+  unauthenticated,
+  validationFailed,
+} from "@/server/http/errors";
 import {
   toGroup,
   toGroupMember,
@@ -32,6 +39,25 @@ export async function requireGroupMember(
     throw notFound("Group not found.");
   }
   return { role: data.role as GroupRole };
+}
+
+type GroupRpcError = { code: string; message: string };
+
+export function mapGroupRpcError(error: GroupRpcError): never {
+  switch (error.code) {
+    case "28000":
+      throw unauthenticated();
+    case "42501":
+      throw forbidden("Only group owners can do that.");
+    case "P0002":
+      throw notFound();
+    case "23514":
+      throw conflict(error.message);
+    case "22023":
+      throw validationFailed(error.message);
+    default:
+      throw internal();
+  }
 }
 
 export async function fetchProfiles(
@@ -222,4 +248,100 @@ export async function getGroup(
       toGroupMember(m, profiles.get(m.user_id) ?? { id: m.user_id, display_name: "Unknown" }),
     ),
   };
+}
+
+export async function updateGroup(
+  supabase: SupabaseClient,
+  userId: string,
+  groupId: string,
+  input: z.input<typeof UpdateGroupRequest>,
+): Promise<Group> {
+  const { role } = await requireGroupMember(supabase, groupId, userId);
+  if (role !== "owner") {
+    throw forbidden("Only group owners can do that.");
+  }
+
+  const body = UpdateGroupRequest.parse(input);
+  const { data, error } = await supabase
+    .from("research_groups")
+    .update(body)
+    .eq("id", groupId)
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    mapGroupRpcError(error);
+  }
+  if (!data) {
+    throw notFound("Group not found.");
+  }
+  return toGroupWithCounts(supabase, data as GroupRow, userId);
+}
+
+export async function rotateInviteCode(
+  supabase: SupabaseClient,
+  userId: string,
+  groupId: string,
+): Promise<string> {
+  await requireGroupMember(supabase, groupId, userId);
+  const { data, error } = await supabase.rpc("rotate_invite_code", {
+    p_group_id: groupId,
+  });
+  if (error) {
+    mapGroupRpcError(error);
+  }
+  if (typeof data !== "string") {
+    throw internal("rotate_invite_code returned no invite code.");
+  }
+  return data;
+}
+
+export async function updateMemberRole(
+  supabase: SupabaseClient,
+  userId: string,
+  groupId: string,
+  targetUserId: string,
+  role: GroupRole,
+): Promise<GroupDetail> {
+  await requireGroupMember(supabase, groupId, userId);
+  const { error } = await supabase.rpc("set_group_member_role", {
+    p_group_id: groupId,
+    p_user_id: targetUserId,
+    p_role: role,
+  });
+  if (error) {
+    mapGroupRpcError(error);
+  }
+  return getGroup(supabase, userId, groupId);
+}
+
+export async function removeGroupMember(
+  supabase: SupabaseClient,
+  userId: string,
+  groupId: string,
+  targetUserId: string,
+): Promise<void> {
+  await requireGroupMember(supabase, groupId, userId);
+  const { error } = await supabase.rpc("remove_group_member", {
+    p_group_id: groupId,
+    p_user_id: targetUserId,
+  });
+  if (error) {
+    mapGroupRpcError(error);
+  }
+}
+
+export async function leaveGroup(
+  supabase: SupabaseClient,
+  groupId: string,
+): Promise<"left" | "deleted"> {
+  const { data, error } = await supabase.rpc("leave_group", {
+    p_group_id: groupId,
+  });
+  if (error) {
+    mapGroupRpcError(error);
+  }
+  if (data !== "left" && data !== "deleted") {
+    throw internal("leave_group returned an unknown result.");
+  }
+  return data;
 }

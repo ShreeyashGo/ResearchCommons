@@ -19,8 +19,11 @@ import { getDashboard } from "@/server/dashboard/service";
 import {
   createGroup,
   getGroup,
+  leaveGroup,
   joinGroup,
   listGroups,
+  removeGroupMember,
+  updateGroup,
 } from "@/server/groups/service";
 import {
   getLibraryPaper,
@@ -202,6 +205,41 @@ describe.skipIf(!enabled)("backend API integration (local Supabase)", () => {
 
     await expect(getGroup(c.client, c.id, group.id)).rejects.toMatchObject({
       code: "not_found",
+    });
+  });
+
+  it("updates group settings and maps group-management errors", async () => {
+    const group = await createGroup(a.client, a.id, {
+      name: `Management group ${randomUUID()}`,
+      description: "before",
+    });
+    groupIds.push(group.id);
+    await joinGroup(b.client, b.id, group.inviteCode);
+
+    const updated = await updateGroup(a.client, a.id, group.id, {
+      name: "Updated management group",
+      description: "after",
+    });
+    expect(updated.name).toBe("Updated management group");
+    expect(updated.description).toBe("after");
+
+    await expect(
+      updateGroup(b.client, b.id, group.id, { name: "Member edit" }),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: "Only group owners can do that.",
+    });
+
+    await expect(leaveGroup(a.client, group.id)).rejects.toMatchObject({
+      code: "conflict",
+      message: "make another member an owner before leaving",
+    });
+
+    await expect(
+      removeGroupMember(b.client, b.id, group.id, a.id),
+    ).rejects.toMatchObject({
+      code: "forbidden",
+      message: "Only group owners can do that.",
     });
   });
 

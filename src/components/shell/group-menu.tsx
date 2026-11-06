@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Copy, KeyRound, Plus, Users } from "lucide-react";
+import { Check, ChevronDown, Copy, KeyRound, Plus, Settings2, Users } from "lucide-react";
 import type { Group } from "@/contracts";
 import { api } from "@/lib/client/api";
 import { cn } from "@/lib/client/utils";
 import { Button, Input } from "@/components/ui/controls";
 import { Dialog } from "@/components/ui/overlay";
+import { GroupSettings } from "./group-settings";
 
 export function GroupMenu({
   groups,
   active,
+  userId,
   open,
   onOpenChange,
   onSelect,
@@ -19,6 +21,7 @@ export function GroupMenu({
 }: {
   groups: Group[];
   active: Group | null;
+  userId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (g: Group) => void;
@@ -35,6 +38,7 @@ export function GroupMenu({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -128,25 +132,38 @@ export function GroupMenu({
 
   return (
     <div className="relative px-3 pb-2" ref={dropRef}>
-      <button
-        className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left shadow-card hover:border-line-strong"
-        onClick={() => setDropOpen((v) => !v)}
-      >
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-2 text-ink-soft">
-          <Users size={13} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium">
-            {active ? active.name : "Select a group"}
+      <div className="flex gap-1">
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-left shadow-card hover:border-line-strong"
+          onClick={() => setDropOpen((v) => !v)}
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-surface-2 text-ink-soft">
+            <Users size={13} />
           </span>
-          {active && (
-            <span className="block text-[11px] text-muted">
-              {active.memberCount} member{active.memberCount === 1 ? "" : "s"} · {active.paperCount} papers
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium">
+              {active ? active.name : "Select a group"}
             </span>
-          )}
-        </span>
-        <ChevronDown size={14} className="text-muted" />
-      </button>
+            {active && (
+              <span className="block text-[11px] text-muted">
+                {active.memberCount} member{active.memberCount === 1 ? "" : "s"} · {active.paperCount} papers
+              </span>
+            )}
+          </span>
+          <ChevronDown size={14} className="text-muted" />
+        </button>
+        {active && (
+          <button
+            type="button"
+            aria-label="Group settings"
+            title="Group settings"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-muted shadow-card hover:border-line-strong hover:text-ink"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 size={16} />
+          </button>
+        )}
+      </div>
 
       {dropOpen && (
         <div className="absolute inset-x-3 top-full z-30 mt-1 overflow-hidden rounded-lg border border-line bg-surface shadow-pop">
@@ -197,6 +214,16 @@ export function GroupMenu({
           Invite code <span className="font-mono text-ink-soft">{active.inviteCode}</span>
           {copied ? <Check size={11} className="text-ok" /> : <Copy size={11} />}
         </button>
+      )}
+
+      {active && (
+        <GroupSettings
+          groupId={active.id}
+          userId={userId}
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onChanged={onChanged}
+        />
       )}
 
       {dialog}

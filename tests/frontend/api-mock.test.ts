@@ -37,4 +37,38 @@ describe("API_MOCK flag", () => {
     expect((await api.me()).profile.displayName).toBe("Grace Hopper");
     await expect(api.updateMe({ displayName: "" })).rejects.toThrow();
   });
+
+  it("rotates invite codes and denies owner actions to members", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCK", "1");
+    const { api } = await import("@/lib/client/api");
+    const { groups } = await api.listGroups();
+    const ownerGroup = groups.find((group) => group.myRole === "owner");
+    const memberGroup = groups.find((group) => group.myRole === "member");
+    if (!ownerGroup || !memberGroup) throw new Error("Expected owner and member mock groups.");
+
+    const oldCode = ownerGroup.inviteCode;
+    const rotated = await api.rotateInviteCode(ownerGroup.id);
+    expect(rotated.inviteCode).not.toBe(oldCode);
+    expect((await api.me()).groups.find((group) => group.id === ownerGroup.id)?.inviteCode).toBe(
+      rotated.inviteCode,
+    );
+    await expect(api.rotateInviteCode(memberGroup.id)).rejects.toMatchObject({
+      code: "forbidden",
+    });
+  });
+
+  it("rejects the last owner's leave and deletes a group when its last member leaves", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCK", "1");
+    const { api } = await import("@/lib/client/api");
+    const { groups } = await api.listGroups();
+    const ownedGroup = groups.find((group) => group.myRole === "owner");
+    if (!ownedGroup) throw new Error("Expected an owned mock group.");
+    await expect(api.leaveGroup(ownedGroup.id)).rejects.toMatchObject({
+      code: "conflict",
+    });
+
+    const { group } = await api.createGroup({ name: "Solo group", description: "" });
+    await expect(api.leaveGroup(group.id)).resolves.toEqual({ result: "deleted" });
+    expect((await api.me()).groups.some((entry) => entry.id === group.id)).toBe(false);
+  });
 });
