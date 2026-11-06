@@ -4,7 +4,7 @@ Demo video: [demo.mp4](assets/demo.mp4) (45 s, dark mode).
 
 ## Prerequisites
 
-Install Docker, Node.js 20, pnpm 9, and the Supabase CLI.
+Install Docker, Node.js 20, pnpm 9, the Supabase CLI, and Git LFS (`git lfs install` once, before cloning; if you cloned without it, run `git lfs pull`).
 
 ## Start the demo
 

@@ -72,7 +72,7 @@ Built in one day at the **Devin Hackathon** at **HackerHouse, Georgia Tech**.
 
 ## Quickstart
 
-**Prerequisites:** Node.js 20, pnpm 9, Docker, and the Supabase CLI.
+**Prerequisites:** Node.js 20, pnpm 9, Docker, the Supabase CLI, and Git LFS (`git lfs install` once, before cloning; if you cloned without it, run `git lfs pull`).
 
 ```sh
 pnpm install

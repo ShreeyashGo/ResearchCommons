@@ -778,6 +778,9 @@ async function seed(): Promise<void> {
       "paper.pdf",
     );
     const pdfBytes = readFileSync(pdfPath);
+    if (pdfBytes.subarray(0, 20).toString("utf8").startsWith("version https://git-lfs")) {
+      throw new Error("fixture is a Git LFS pointer; run git lfs pull");
+    }
     if (!pdfBytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
       throw new Error(`Fixture is not a PDF: ${pdfPath}`);
     }

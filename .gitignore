@@ -15,6 +15,7 @@ supabase/.branches/
 playwright-report/
 test-results/
 blob-report/
+.lfs-assets-id
 build/
 .vercel/
 *.tsbuildinfo
